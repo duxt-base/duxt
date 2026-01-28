@@ -1,0 +1,225 @@
+import 'dart:io';
+import 'package:path/path.dart' as p;
+
+/// Generates Jaspr Router configuration from /pages directory
+///
+/// Conventions (matching Nuxt):
+/// - pages/index.dart -> /
+/// - pages/about.dart -> /about
+/// - pages/posts/index.dart -> /posts
+/// - pages/posts/[id].dart -> /posts/:id
+/// - pages/posts/[...slug].dart -> /posts/*
+/// - pages/users/[userId]/posts/[postId].dart -> /users/:userId/posts/:postId
+class RouterGenerator {
+  static Future<void> generate(String projectDir) async {
+    // Check both lib/pages and pages directories
+    var pagesDir = Directory(p.join(projectDir, 'lib', 'pages'));
+    if (!pagesDir.existsSync()) {
+      pagesDir = Directory(p.join(projectDir, 'pages'));
+    }
+    final outputDir = Directory(p.join(projectDir, '.duxt'));
+    final outputFile = File(p.join(outputDir.path, 'routes.g.dart'));
+
+    if (!pagesDir.existsSync()) {
+      print('  No pages directory found (checked lib/pages and pages)');
+      return;
+    }
+
+    // Ensure output directory exists
+    if (!outputDir.existsSync()) {
+      outputDir.createSync(recursive: true);
+    }
+
+    // Scan pages
+    final routes = await _scanPages(pagesDir, pagesDir.path);
+
+    // Sort routes (static before dynamic, shorter before longer)
+    routes.sort(_compareRoutes);
+
+    // Generate code
+    final code = _generateRouterCode(routes, projectDir);
+    await outputFile.writeAsString(code);
+
+    print('  Generated ${routes.length} routes');
+  }
+
+  static Future<List<RouteInfo>> _scanPages(Directory dir, String basePath) async {
+    final routes = <RouteInfo>[];
+
+    await for (final entity in dir.list()) {
+      if (entity is File && entity.path.endsWith('.dart')) {
+        final route = _fileToRoute(entity.path, basePath);
+        if (route != null) {
+          routes.add(route);
+        }
+      } else if (entity is Directory) {
+        routes.addAll(await _scanPages(entity, basePath));
+      }
+    }
+
+    return routes;
+  }
+
+  static RouteInfo? _fileToRoute(String filePath, String basePath) {
+    // Get relative path from pages/
+    var relativePath = p.relative(filePath, from: basePath);
+
+    // Remove .dart extension
+    relativePath = relativePath.replaceAll('.dart', '');
+
+    // Handle index files
+    if (relativePath == 'index') {
+      relativePath = '';
+    } else if (relativePath.endsWith('/index')) {
+      relativePath = relativePath.replaceAll('/index', '');
+    }
+
+    // Convert to route path
+    var routePath = '/' + relativePath;
+
+    // Convert [param] to :param (Nuxt style to Jaspr style)
+    routePath = routePath.replaceAllMapped(
+      RegExp(r'\[\.\.\.(\w+)\]'),
+      (m) => '*', // Catch-all
+    );
+    routePath = routePath.replaceAllMapped(
+      RegExp(r'\[(\w+)\]'),
+      (m) => ':${m.group(1)}',
+    );
+
+    // Clean up double slashes
+    routePath = routePath.replaceAll('//', '/');
+    if (routePath != '/' && routePath.endsWith('/')) {
+      routePath = routePath.substring(0, routePath.length - 1);
+    }
+
+    // Extract component name from file
+    final fileName = p.basenameWithoutExtension(filePath);
+    final componentName = _toComponentName(fileName, relativePath);
+
+    // Detect dynamic parameters
+    final params = <String>[];
+    final paramRegex = RegExp(r':(\w+)');
+    for (final match in paramRegex.allMatches(routePath)) {
+      params.add(match.group(1)!);
+    }
+
+    return RouteInfo(
+      path: routePath,
+      filePath: filePath,
+      componentName: componentName,
+      params: params,
+      isCatchAll: routePath.contains('*'),
+    );
+  }
+
+  static String _toComponentName(String fileName, String relativePath) {
+    // Convert file path to PascalCase component name
+    // pages/posts/[id].dart -> PostsIdPage
+    final parts = relativePath
+        .replaceAll('[', '')
+        .replaceAll(']', '')
+        .replaceAll('...', '')
+        .split('/')
+        .where((p) => p.isNotEmpty)
+        .map(_toPascalCase)
+        .toList();
+
+    if (parts.isEmpty) {
+      return 'IndexPage';
+    }
+
+    return '${parts.join('')}Page';
+  }
+
+  static String _toPascalCase(String s) {
+    if (s.isEmpty) return s;
+    return s[0].toUpperCase() + s.substring(1);
+  }
+
+  static int _compareRoutes(RouteInfo a, RouteInfo b) {
+    // Static routes before dynamic
+    final aIsDynamic = a.path.contains(':') || a.path.contains('*');
+    final bIsDynamic = b.path.contains(':') || b.path.contains('*');
+
+    if (aIsDynamic != bIsDynamic) {
+      return aIsDynamic ? 1 : -1;
+    }
+
+    // Catch-all routes last
+    if (a.isCatchAll != b.isCatchAll) {
+      return a.isCatchAll ? 1 : -1;
+    }
+
+    // Shorter paths first
+    return a.path.length.compareTo(b.path.length);
+  }
+
+  static String _generateRouterCode(List<RouteInfo> routes, String projectDir) {
+    final buffer = StringBuffer();
+
+    buffer.writeln('// GENERATED CODE - DO NOT MODIFY BY HAND');
+    buffer.writeln('// Generated by Duxt');
+    buffer.writeln('');
+    buffer.writeln("import 'package:duxt/duxt.dart';");
+    buffer.writeln('');
+
+    // Import all page files
+    for (final route in routes) {
+      final importPath = p.relative(route.filePath, from: projectDir);
+      buffer.writeln("import '../$importPath' as ${_toImportAlias(route)};");
+    }
+
+    buffer.writeln('');
+    buffer.writeln('/// Generated routes from /pages directory');
+    buffer.writeln('final generatedRoutes = <Route>[');
+
+    for (final route in routes) {
+      buffer.writeln('  Route(');
+      buffer.writeln("    path: '${route.path}',");
+      buffer.writeln('    builder: (context, state) {');
+
+      if (route.params.isNotEmpty) {
+        buffer.writeln('      final params = state.pathParameters;');
+        buffer.writeln('      return ${_toImportAlias(route)}.${route.componentName}(');
+        for (final param in route.params) {
+          buffer.writeln("        $param: params['$param']!,");
+        }
+        buffer.writeln('      );');
+      } else {
+        buffer.writeln('      return const ${_toImportAlias(route)}.${route.componentName}();');
+      }
+
+      buffer.writeln('    },');
+      buffer.writeln('  ),');
+    }
+
+    buffer.writeln('];');
+
+    return buffer.toString();
+  }
+
+  static String _toImportAlias(RouteInfo route) {
+    return 'page_${route.componentName.toLowerCase()}';
+  }
+}
+
+/// Information about a route
+class RouteInfo {
+  final String path;
+  final String filePath;
+  final String componentName;
+  final List<String> params;
+  final bool isCatchAll;
+
+  RouteInfo({
+    required this.path,
+    required this.filePath,
+    required this.componentName,
+    required this.params,
+    required this.isCatchAll,
+  });
+
+  @override
+  String toString() => 'RouteInfo($path -> $componentName)';
+}
