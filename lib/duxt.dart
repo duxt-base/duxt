@@ -18,6 +18,8 @@ export 'src/runtime/page.dart';
 export 'src/runtime/layout.dart';
 export 'src/runtime/middleware.dart';
 export 'src/runtime/composable.dart';
+export 'src/runtime/api.dart';
+export 'src/runtime/duxt_state.dart';
 
 // Core exports for code generation
 export 'src/core/router_generator.dart' show RouteInfo;

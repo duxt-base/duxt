@@ -2,31 +2,27 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
-/// Short generate command (like Rails/Laravel style)
-/// Usage: duxt g <type> <name> [field:type ...]
+/// Generate command - Rails-style short generator
+/// Usage: duxt g <type> <module>/<name> [field:type ...]
 ///
 /// Examples:
-///   duxt g page posts/[slug] title:String content:String
-///   duxt g component post_card title:String excerpt:String image:String
-///   duxt g model post title:String content:String published:bool
+///   duxt g module posts
+///   duxt g page posts/[id]
+///   duxt g component posts/card title:String
+///   duxt g model posts title:String content:String
 ///   duxt g api posts
 class GCommand extends Command<int> {
   @override
   final name = 'g';
 
   @override
-  final description = 'Generate a page, component, model, or API route';
+  final description = 'Generate module, page, component, model, or api';
 
   @override
-  String get invocation => 'duxt g <type> <name> [field:type ...]';
+  String get invocation => 'duxt g <type> <module/name> [field:type ...]';
 
   GCommand() {
-    argParser.addFlag(
-      'force',
-      abbr: 'f',
-      help: 'Overwrite existing files',
-      defaultsTo: false,
-    );
+    argParser.addFlag('force', abbr: 'f', help: 'Overwrite existing files');
   }
 
   @override
@@ -37,36 +33,36 @@ class GCommand extends Command<int> {
     }
 
     final type = argResults!.rest[0];
-    if (argResults!.rest.length < 2) {
+    if (argResults!.rest.length < 2 && type != 'module') {
       print('Error: Please specify a name');
       _printUsage();
       return 1;
     }
 
-    final name = argResults!.rest[1];
+    final target = argResults!.rest.length > 1 ? argResults!.rest[1] : '';
     final fields = _parseFields(argResults!.rest.skip(2).toList());
     final force = argResults!['force'] as bool;
     final projectDir = Directory.current.path;
 
     switch (type) {
+      case 'module':
+      case 'mod':
+        return _generateModule(projectDir, target, force);
       case 'page':
       case 'p':
-        return _generatePage(projectDir, name, fields, force);
+        return _generatePage(projectDir, target, fields, force);
       case 'component':
       case 'c':
-        return _generateComponent(projectDir, name, fields, force);
+        return _generateComponent(projectDir, target, fields, force);
       case 'model':
       case 'm':
-        return _generateModel(projectDir, name, fields, force);
+        return _generateModel(projectDir, target, fields, force);
       case 'api':
       case 'a':
-        return _generateApi(projectDir, name, fields, force);
-      case 'middleware':
-      case 'mw':
-        return _generateMiddleware(projectDir, name, force);
-      case 'composable':
-      case 'co':
-        return _generateComposable(projectDir, name, fields, force);
+        return _generateApi(projectDir, target, fields, force);
+      case 'layout':
+      case 'l':
+        return _generateLayout(projectDir, target, force);
       default:
         print('Error: Unknown type "$type"');
         _printUsage();
@@ -76,21 +72,23 @@ class GCommand extends Command<int> {
 
   void _printUsage() {
     print('');
-    print('Usage: duxt g <type> <name> [field:type ...]');
+    print('Usage: duxt g <type> <module/name> [field:type ...]');
     print('');
     print('Types:');
-    print('  page, p        - Generate a new page');
-    print('  component, c   - Generate a new component');
-    print('  model, m       - Generate a new model class');
-    print('  api, a         - Generate a new API route');
-    print('  middleware, mw - Generate new middleware');
-    print('  composable, co - Generate a new composable');
+    print('  module, mod  - Generate a new module');
+    print('  page, p      - Generate a page in a module');
+    print('  component, c - Generate a component in a module');
+    print('  model, m     - Generate a model in a module');
+    print('  api, a       - Generate an API route in a module');
+    print('  layout, l    - Generate a layout in shared/layouts');
     print('');
     print('Examples:');
-    print('  duxt g page posts/[slug] title:String content:String');
-    print('  duxt g component post_card title:String excerpt:String');
-    print('  duxt g model post title:String content:String author:String');
-    print('  duxt g api posts');
+    print('  duxt g module posts                     # Create posts module');
+    print('  duxt g page posts/[id]                  # Create posts/pages/[id].dart');
+    print('  duxt g component posts/card title:String');
+    print('  duxt g model posts title:String content:String');
+    print('  duxt g api posts                        # Create server/api/posts.dart');
+    print('  duxt g layout admin                     # Create shared/layouts/admin.dart');
   }
 
   List<FieldDef> _parseFields(List<String> args) {
@@ -98,10 +96,7 @@ class GCommand extends Command<int> {
     for (final arg in args) {
       if (arg.contains(':')) {
         final parts = arg.split(':');
-        fields.add(FieldDef(
-          name: parts[0],
-          type: _normalizeType(parts[1]),
-        ));
+        fields.add(FieldDef(name: parts[0], type: _normalizeType(parts[1])));
       }
     }
     return fields;
@@ -111,14 +106,12 @@ class GCommand extends Command<int> {
     switch (type.toLowerCase()) {
       case 'string':
       case 'str':
-      case 'text':
         return 'String';
       case 'int':
       case 'integer':
         return 'int';
       case 'double':
       case 'float':
-      case 'number':
         return 'double';
       case 'bool':
       case 'boolean':
@@ -135,8 +128,66 @@ class GCommand extends Command<int> {
     }
   }
 
-  Future<int> _generatePage(String projectDir, String name, List<FieldDef> fields, bool force) async {
-    final filePath = p.join(projectDir, 'lib', 'pages', '$name.dart');
+  // Parse module/name format
+  (String module, String name) _parseTarget(String target) {
+    if (target.contains('/')) {
+      final parts = target.split('/');
+      return (parts[0], parts.sublist(1).join('/'));
+    }
+    return (target, 'index');
+  }
+
+  Future<int> _generateModule(String projectDir, String moduleName, bool force) async {
+    if (moduleName.isEmpty) {
+      print('Error: Please specify a module name');
+      return 1;
+    }
+
+    final moduleDir = p.join(projectDir, 'lib', moduleName);
+    if (Directory(moduleDir).existsSync() && !force) {
+      print('Error: Module "$moduleName" already exists. Use --force to overwrite.');
+      return 1;
+    }
+
+    // Create directories
+    await Directory(p.join(moduleDir, 'pages')).create(recursive: true);
+    await Directory(p.join(moduleDir, 'components')).create(recursive: true);
+
+    // Create index page
+    final className = _toPascalCase(moduleName);
+    final pageContent = '''
+import 'package:jaspr/jaspr.dart';
+
+class ${className}Page extends StatelessComponent {
+  const ${className}Page({super.key});
+
+  @override
+  Component build(BuildContext context) {
+    return div(classes: 'space-y-6', [
+      h1(classes: 'text-3xl font-bold text-gray-900', [
+        text('$className'),
+      ]),
+      p(classes: 'text-gray-600', [
+        text('Welcome to the $moduleName module'),
+      ]),
+    ]);
+  }
+}
+''';
+    await File(p.join(moduleDir, 'pages', 'index.dart')).writeAsString(pageContent);
+
+    print('\x1B[32m✓\x1B[0m Generated module: $moduleName/');
+    print('    pages/index.dart');
+    print('    components/');
+    print('');
+    print('Add route to lib/app.dart:');
+    print("  Route(path: '/$moduleName', builder: (_, __) => const ${className}Page()),");
+    return 0;
+  }
+
+  Future<int> _generatePage(String projectDir, String target, List<FieldDef> fields, bool force) async {
+    final (module, name) = _parseTarget(target);
+    final filePath = p.join(projectDir, 'lib', module, 'pages', '$name.dart');
     final file = File(filePath);
 
     if (file.existsSync() && !force) {
@@ -153,14 +204,14 @@ class GCommand extends Command<int> {
     final content = _buildPageContent(className, fields, routeParams, isDynamic);
     await file.writeAsString(content);
 
-    print('\x1B[32m✓\x1B[0m Generated page: lib/pages/$name.dart');
-    _printRouteHint(name, className, routeParams);
-
+    print('\x1B[32m✓\x1B[0m Generated page: lib/$module/pages/$name.dart');
+    _printRouteHint(module, name, className, routeParams);
     return 0;
   }
 
-  Future<int> _generateComponent(String projectDir, String name, List<FieldDef> fields, bool force) async {
-    final filePath = p.join(projectDir, 'lib', 'components', '$name.dart');
+  Future<int> _generateComponent(String projectDir, String target, List<FieldDef> fields, bool force) async {
+    final (module, name) = _parseTarget(target);
+    final filePath = p.join(projectDir, 'lib', module, 'components', '$name.dart');
     final file = File(filePath);
 
     if (file.existsSync() && !force) {
@@ -174,18 +225,13 @@ class GCommand extends Command<int> {
     final content = _buildComponentContent(className, fields);
     await file.writeAsString(content);
 
-    print('\x1B[32m✓\x1B[0m Generated component: lib/components/$name.dart');
+    print('\x1B[32m✓\x1B[0m Generated component: lib/$module/components/$name.dart');
     return 0;
   }
 
-  Future<int> _generateModel(String projectDir, String name, List<FieldDef> fields, bool force) async {
-    // Create models directory if it doesn't exist
-    final modelsDir = Directory(p.join(projectDir, 'lib', 'models'));
-    if (!modelsDir.existsSync()) {
-      await modelsDir.create(recursive: true);
-    }
-
-    final filePath = p.join(projectDir, 'lib', 'models', '$name.dart');
+  Future<int> _generateModel(String projectDir, String target, List<FieldDef> fields, bool force) async {
+    final (module, _) = _parseTarget(target);
+    final filePath = p.join(projectDir, 'lib', module, 'model.dart');
     final file = File(filePath);
 
     if (file.existsSync() && !force) {
@@ -193,106 +239,114 @@ class GCommand extends Command<int> {
       return 1;
     }
 
-    final className = _toPascalCase(name);
+    await file.parent.create(recursive: true);
+
+    final className = _toPascalCase(module);
     final content = _buildModelContent(className, fields);
     await file.writeAsString(content);
 
-    print('\x1B[32m✓\x1B[0m Generated model: lib/models/$name.dart');
+    print('\x1B[32m✓\x1B[0m Generated model: lib/$module/model.dart');
     return 0;
   }
 
-  Future<int> _generateApi(String projectDir, String name, List<FieldDef> fields, bool force) async {
-    final filePath = p.join(projectDir, 'server', 'api', '$name.dart');
+  Future<int> _generateApi(String projectDir, String target, List<FieldDef> fields, bool force) async {
+    final (module, name) = _parseTarget(target);
+    final apiName = name == 'index' ? module : name;
+    final filePath = p.join(projectDir, 'lib', module, 'api.dart');
     final file = File(filePath);
 
     if (file.existsSync() && !force) {
-      print('Error: API route already exists. Use --force to overwrite.');
+      print('Error: API already exists. Use --force to overwrite.');
       return 1;
     }
 
     await file.parent.create(recursive: true);
 
-    final content = _buildApiContent(name, fields);
+    final className = _toPascalCase(module);
+    final content = _buildApiContent(className, module, fields);
     await file.writeAsString(content);
 
-    print('\x1B[32m✓\x1B[0m Generated API route: server/api/$name.dart');
-    print('  Endpoint: /api/$name');
+    print('\x1B[32m✓\x1B[0m Generated API: lib/$module/api.dart');
+    print('  Endpoint: /api/$apiName');
     return 0;
   }
 
-  Future<int> _generateMiddleware(String projectDir, String name, bool force) async {
-    final filePath = p.join(projectDir, 'middleware', '$name.dart');
+  Future<int> _generateLayout(String projectDir, String name, bool force) async {
+    final filePath = p.join(projectDir, 'lib', 'shared', 'layouts', '$name.dart');
     final file = File(filePath);
 
     if (file.existsSync() && !force) {
-      print('Error: Middleware already exists. Use --force to overwrite.');
+      print('Error: Layout already exists. Use --force to overwrite.');
       return 1;
     }
 
     await file.parent.create(recursive: true);
 
-    final className = _toPascalCase(name);
+    final className = '${_toPascalCase(name)}Layout';
     final content = '''
-import 'package:duxt/duxt.dart';
+import 'package:jaspr/jaspr.dart';
 
-class ${className}Middleware extends DuxtMiddleware {
+class $className extends StatelessComponent {
+  final Component child;
+
+  const $className({super.key, required this.child});
+
   @override
-  String get name => '$name';
-
-  @override
-  Future<bool> handle(DuxtContext context, Future<void> Function() next) async {
-    // Add your middleware logic here
-
-    await next();
-    return true;
+  Component build(BuildContext context) {
+    return div(classes: 'min-h-screen', [
+      // Header
+      header(classes: 'bg-white shadow-sm', [
+        div(classes: 'max-w-7xl mx-auto px-4 py-4', [
+          text('$className'),
+        ]),
+      ]),
+      // Content
+      main_(classes: 'max-w-7xl mx-auto px-4 py-8', [
+        child,
+      ]),
+    ]);
   }
 }
 ''';
-
-    await file.writeAsString(content);
-    print('\x1B[32m✓\x1B[0m Generated middleware: middleware/$name.dart');
-    return 0;
-  }
-
-  Future<int> _generateComposable(String projectDir, String name, List<FieldDef> fields, bool force) async {
-    final filePath = p.join(projectDir, 'composables', '$name.dart');
-    final file = File(filePath);
-
-    if (file.existsSync() && !force) {
-      print('Error: Composable already exists. Use --force to overwrite.');
-      return 1;
-    }
-
-    await file.parent.create(recursive: true);
-
-    final className = 'Use${_toPascalCase(name)}';
-    final content = _buildComposableContent(className, name, fields);
     await file.writeAsString(content);
 
-    print('\x1B[32m✓\x1B[0m Generated composable: composables/$name.dart');
+    print('\x1B[32m✓\x1B[0m Generated layout: lib/shared/layouts/$name.dart');
     return 0;
   }
 
   // Content builders
 
   String _buildPageContent(String className, List<FieldDef> fields, List<String> routeParams, bool isDynamic) {
-    final allParams = <FieldDef>[
+    final allParams = [
       ...routeParams.map((p) => FieldDef(name: p, type: 'String')),
       ...fields,
     ];
 
-    final hasParams = allParams.isNotEmpty;
+    if (allParams.isEmpty) {
+      return '''
+import 'package:jaspr/jaspr.dart';
+
+class $className extends StatelessComponent {
+  const $className({super.key});
+
+  @override
+  Component build(BuildContext context) {
+    return div(classes: 'space-y-6', [
+      h1(classes: 'text-3xl font-bold text-gray-900', [
+        text('$className'),
+      ]),
+    ]);
+  }
+}
+''';
+    }
 
     final paramFields = allParams.map((f) => '  final ${f.type} ${f.name};').join('\n');
     final constructorParams = allParams.map((f) => 'required this.${f.name}').join(', ');
+    final displayFields = allParams.map((f) =>
+      "        p(classes: 'text-gray-600', [text('${f.name}: \$${f.name}')]),").join('\n');
 
-    final displayFields = allParams.isNotEmpty
-        ? allParams.map((f) => "        p(classes: 'text-gray-600', [text('${f.name}: \$${f.name}')]),").join('\n')
-        : "        p(classes: 'text-gray-600', [text('Welcome to $className')]),";
-
-    if (hasParams) {
-      return '''
-import 'package:jaspr/dom.dart';
+    return '''
 import 'package:jaspr/jaspr.dart';
 
 class $className extends StatelessComponent {
@@ -316,32 +370,11 @@ $displayFields
   }
 }
 ''';
-    } else {
-      return '''
-import 'package:jaspr/dom.dart';
-import 'package:jaspr/jaspr.dart';
-
-class $className extends StatelessComponent {
-  const $className({super.key});
-
-  @override
-  Component build(BuildContext context) {
-    return div(classes: 'space-y-6', [
-      h1(classes: 'text-3xl font-bold text-gray-900', [
-        text('$className'),
-      ]),
-$displayFields
-    ]);
-  }
-}
-''';
-    }
   }
 
   String _buildComponentContent(String className, List<FieldDef> fields) {
     if (fields.isEmpty) {
       return '''
-import 'package:jaspr/dom.dart';
 import 'package:jaspr/jaspr.dart';
 
 class $className extends StatelessComponent {
@@ -359,14 +392,8 @@ class $className extends StatelessComponent {
 
     final paramFields = fields.map((f) => '  final ${f.type} ${f.name};').join('\n');
     final constructorParams = fields.map((f) => 'required this.${f.name}').join(', ');
-    final displayFields = fields
-        .map((f) => f.type == 'String'
-            ? "        text(${f.name}),"
-            : "        text('\$${f.name}'),")
-        .join('\n');
 
     return '''
-import 'package:jaspr/dom.dart';
 import 'package:jaspr/jaspr.dart';
 
 class $className extends StatelessComponent {
@@ -380,9 +407,7 @@ $paramFields
   @override
   Component build(BuildContext context) {
     return div(classes: 'p-4 bg-white rounded-lg shadow', [
-      div(classes: 'space-y-2', [
-$displayFields
-      ]),
+${fields.map((f) => "      p([text('\$${f.name}')]),").join('\n')}
     ]);
   }
 }
@@ -398,47 +423,28 @@ class $className {
   const $className({required this.id});
 
   factory $className.fromJson(Map<String, dynamic> json) {
-    return $className(
-      id: json['id'] as String,
-    );
+    return $className(id: json['id'] as String);
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-    };
-  }
+  Map<String, dynamic> toJson() => {'id': id};
 }
 ''';
     }
 
-    final paramFields = [
-      '  final String id;',
-      ...fields.map((f) => '  final ${f.type}${f.type.endsWith('?') ? '' : '?'} ${f.name};'),
-    ].join('\n');
-
-    final constructorParams = [
-      'required this.id',
-      ...fields.map((f) => 'this.${f.name}'),
-    ].join(', ');
-
-    final fromJsonFields = [
-      "      id: json['id'] as String,",
-      ...fields.map((f) => "      ${f.name}: json['${f.name}'] as ${f.type}?,"),
-    ].join('\n');
-
-    final toJsonFields = [
-      "      'id': id,",
-      ...fields.map((f) => "      '${f.name}': ${f.name},"),
-    ].join('\n');
+    final allFields = [FieldDef(name: 'id', type: 'String'), ...fields];
+    final paramFields = allFields.map((f) => '  final ${f.type} ${f.name};').join('\n');
+    final constructorParams = allFields.map((f) =>
+      f.name == 'id' ? 'required this.id' : 'this.${f.name}').join(', ');
+    final fromJsonFields = allFields.map((f) =>
+      "      ${f.name}: json['${f.name}'] as ${f.type}${f.name == 'id' ? '' : '?'},").join('\n');
+    final toJsonFields = allFields.map((f) =>
+      "      '${f.name}': ${f.name},").join('\n');
 
     return '''
 class $className {
 $paramFields
 
-  const $className({
-    $constructorParams,
-  });
+  const $className({$constructorParams});
 
   factory $className.fromJson(Map<String, dynamic> json) {
     return $className(
@@ -452,134 +458,45 @@ $toJsonFields
     };
   }
 
-  $className copyWith({
-    String? id,
-${fields.map((f) => '    ${f.type}? ${f.name},').join('\n')}
-  }) {
-    return $className(
-      id: id ?? this.id,
-${fields.map((f) => '      ${f.name}: ${f.name} ?? this.${f.name},').join('\n')}
-    );
+  static List<$className> fromList(List<dynamic> list) {
+    return list.map((e) => $className.fromJson(e as Map<String, dynamic>)).toList();
   }
 }
 ''';
   }
 
-  String _buildApiContent(String name, List<FieldDef> fields) {
-    return '''
-import 'package:duxt/server.dart';
-
-/// API route: /api/$name
-///
-/// Supports: GET, POST, PUT, DELETE
-final handler = defineEventHandler((request) async {
-  switch (request.method) {
-    case 'GET':
-      // List all or get by ID
-      final id = getQueryParam(request, 'id');
-      if (id != null) {
-        return ApiResponse.json({
-          'id': id,
-          // Add your fields here
-        });
-      }
-      return ApiResponse.json({
-        'items': [],
-        'total': 0,
-      });
-
-    case 'POST':
-      // Create new
-      final body = request.json;
-      return ApiResponse.created({
-        'id': DateTime.now().millisecondsSinceEpoch.toString(),
-        ...body as Map<String, dynamic>,
-      });
-
-    case 'PUT':
-      // Update
-      final body = request.json;
-      return ApiResponse.json(body);
-
-    case 'DELETE':
-      // Delete
-      return ApiResponse.noContent();
-
-    default:
-      return ApiResponse.methodNotAllowed();
-  }
-});
-''';
-  }
-
-  String _buildComposableContent(String className, String name, List<FieldDef> fields) {
-    if (fields.isEmpty) {
-      return '''
-import 'package:duxt/duxt.dart';
-
-class $className {
-  final UseState<dynamic> _state;
-
-  $className([dynamic initial]) : _state = UseState(initial);
-
-  dynamic get value => _state.value;
-
-  void setValue(dynamic newValue) {
-    _state.value = newValue;
-  }
-
-  void listen(void Function(dynamic) listener) {
-    _state.listen(listener);
-  }
-}
-''';
-    }
-
-    final stateFields = fields.map((f) => '  final UseState<${f.type}> _${f.name};').join('\n');
-    final initFields = fields.map((f) {
-      final defaultValue = _getDefaultValue(f.type);
-      return '      : _${f.name} = UseState($defaultValue)';
-    }).join(',\n');
-
-    final getters = fields.map((f) => '  ${f.type} get ${f.name} => _${f.name}.value;').join('\n');
-    final setters = fields.map((f) => '''
-  void set${_toPascalCase(f.name)}(${f.type} value) {
-    _${f.name}.value = value;
-  }''').join('\n\n');
-
+  String _buildApiContent(String className, String module, List<FieldDef> fields) {
     return '''
 import 'package:duxt/duxt.dart';
+import 'model.dart';
 
-class $className {
-$stateFields
+/// API calls for $module module
+class ${className}Api {
+  static Future<List<$className>> getAll() async {
+    final data = await Api.get('/$module');
+    return $className.fromList(data as List);
+  }
 
-  $className()
-$initFields;
+  static Future<$className> getOne(String id) async {
+    final data = await Api.get('/$module/\$id');
+    return $className.fromJson(data as Map<String, dynamic>);
+  }
 
-$getters
+  static Future<$className> create($className item) async {
+    final data = await Api.post('/$module', body: item.toJson());
+    return $className.fromJson(data as Map<String, dynamic>);
+  }
 
-$setters
+  static Future<$className> update(String id, $className item) async {
+    final data = await Api.put('/$module/\$id', body: item.toJson());
+    return $className.fromJson(data as Map<String, dynamic>);
+  }
 
-  void reset() {
-${fields.map((f) => '    _${f.name}.value = ${_getDefaultValue(f.type)};').join('\n')}
+  static Future<void> delete(String id) async {
+    await Api.delete('/$module/\$id');
   }
 }
 ''';
-  }
-
-  String _getDefaultValue(String type) {
-    switch (type) {
-      case 'String':
-        return "''";
-      case 'int':
-        return '0';
-      case 'double':
-        return '0.0';
-      case 'bool':
-        return 'false';
-      default:
-        return 'null';
-    }
   }
 
   // Helpers
@@ -593,7 +510,6 @@ ${fields.map((f) => '    _${f.name}.value = ${_getDefaultValue(f.type)};').join(
         .where((p) => p.isNotEmpty)
         .map(_toPascalCase)
         .toList();
-
     if (parts.isEmpty) return 'IndexPage';
     return '${parts.join('')}Page';
   }
@@ -615,18 +531,18 @@ ${fields.map((f) => '    _${f.name}.value = ${_getDefaultValue(f.type)};').join(
     return params;
   }
 
-  void _printRouteHint(String name, String className, List<String> routeParams) {
+  void _printRouteHint(String module, String name, String className, List<String> routeParams) {
     print('');
-    print('Add to lib/app.dart:');
-    print('  Route(');
-    final routePath = '/' + name
+    print('Add route to lib/app.dart:');
+    final routePath = '/$module${name == 'index' ? '' : '/$name'}'
         .replaceAllMapped(RegExp(r'\[\.\.\.(\w+)\]'), (m) => '*')
         .replaceAllMapped(RegExp(r'\[(\w+)\]'), (m) => ':${m.group(1)}');
+    print('  Route(');
     print("    path: '$routePath',");
     if (routeParams.isNotEmpty) {
       print('    builder: (context, state) => $className(');
       for (final param in routeParams) {
-        print("      $param: state.pathParameters['$param']!,");
+        print("      $param: state.params['$param']!,");
       }
       print('    ),');
     } else {
@@ -639,6 +555,5 @@ ${fields.map((f) => '    _${f.name}.value = ${_getDefaultValue(f.type)};').join(
 class FieldDef {
   final String name;
   final String type;
-
   FieldDef({required this.name, required this.type});
 }

@@ -2,122 +2,116 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
-/// Scaffold command - generates full CRUD like Rails
+/// Scaffold command - generates full module with CRUD
 /// Usage: duxt scaffold <name> [field:type ...]
 ///
-/// Example: duxt scaffold post title:String content:String author:String
+/// Example: duxt scaffold posts title:String content:String author:String
 ///
 /// Generates:
-/// - lib/models/<name>.dart         (Model with fields)
-/// - lib/pages/<name>/index.dart    (List page)
-/// - lib/pages/<name>/[id].dart     (Detail page)
-/// - lib/components/<name>_card.dart (Card component)
-/// - server/api/<name>.dart         (CRUD API endpoints)
+/// lib/posts/
+///   pages/
+///     index.dart     (list page)
+///     [id].dart      (detail page)
+///     new.dart       (create page)
+///   components/
+///     post_card.dart
+///     post_form.dart
+///   model.dart
+///   api.dart
 class ScaffoldCommand extends Command<int> {
   @override
   final name = 'scaffold';
 
   @override
-  final description = 'Generate full CRUD scaffold (model, pages, component, API)';
+  final description = 'Generate full module with CRUD (pages, components, model, api)';
 
   @override
   String get invocation => 'duxt scaffold <name> [field:type ...]';
 
   ScaffoldCommand() {
-    argParser.addFlag(
-      'force',
-      abbr: 'f',
-      help: 'Overwrite existing files',
-      defaultsTo: false,
-    );
-    argParser.addFlag(
-      'api-only',
-      help: 'Only generate model and API (no pages/components)',
-      defaultsTo: false,
-    );
+    argParser.addFlag('force', abbr: 'f', help: 'Overwrite existing files');
+    argParser.addFlag('api-only', help: 'Only generate model and API');
   }
 
   @override
   Future<int> run() async {
     if (argResults!.rest.isEmpty) {
-      print('Error: Please specify a resource name');
+      print('Error: Please specify a module name');
       print('Usage: duxt scaffold <name> [field:type ...]');
       print('');
       print('Example:');
-      print('  duxt scaffold post title:String content:String author:String');
+      print('  duxt scaffold posts title:String content:String');
       return 1;
     }
 
-    final resourceName = argResults!.rest[0].toLowerCase();
+    final moduleName = argResults!.rest[0].toLowerCase();
     final fields = _parseFields(argResults!.rest.skip(1).toList());
     final force = argResults!['force'] as bool;
     final apiOnly = argResults!['api-only'] as bool;
     final projectDir = Directory.current.path;
 
-    // Validate we're in a Duxt project
-    if (!File('$projectDir/duxt.config.dart').existsSync() &&
-        !Directory('$projectDir/lib/pages').existsSync()) {
-      print('Error: Not a Duxt project directory');
-      return 1;
-    }
-
     print('');
-    print('\x1B[36mScaffolding $resourceName...\x1B[0m');
+    print('\x1B[36mScaffolding $moduleName module...\x1B[0m');
     print('');
 
-    final className = _toPascalCase(resourceName);
-    final pluralName = _pluralize(resourceName);
+    final className = _toPascalCase(moduleName);
+    final singular = _singularize(moduleName);
+    final singularClass = _toPascalCase(singular);
 
     try {
+      // Create module directories
+      final moduleDir = p.join(projectDir, 'lib', moduleName);
+      await Directory(p.join(moduleDir, 'pages')).create(recursive: true);
+      await Directory(p.join(moduleDir, 'components')).create(recursive: true);
+
       // 1. Generate Model
-      await _generateModel(projectDir, resourceName, className, fields, force);
+      await _generateModel(moduleDir, singularClass, fields);
+      print('  \x1B[32m✓\x1B[0m model.dart');
 
       // 2. Generate API
-      await _generateApi(projectDir, pluralName, resourceName, className, fields, force);
+      await _generateApi(moduleDir, singularClass, moduleName);
+      print('  \x1B[32m✓\x1B[0m api.dart');
 
       if (!apiOnly) {
-        // 3. Generate Card Component
-        await _generateCard(projectDir, resourceName, className, fields, force);
+        // 3. Generate List Page
+        await _generateListPage(moduleDir, moduleName, singularClass, fields);
+        print('  \x1B[32m✓\x1B[0m pages/index.dart');
 
-        // 4. Generate List Page
-        await _generateListPage(projectDir, pluralName, resourceName, className, fields, force);
+        // 4. Generate Detail Page
+        await _generateDetailPage(moduleDir, moduleName, singularClass, fields);
+        print('  \x1B[32m✓\x1B[0m pages/[id].dart');
 
-        // 5. Generate Detail Page
-        await _generateDetailPage(projectDir, pluralName, resourceName, className, fields, force);
+        // 5. Generate New Page
+        await _generateNewPage(moduleDir, moduleName, singularClass, fields);
+        print('  \x1B[32m✓\x1B[0m pages/new.dart');
+
+        // 6. Generate Card Component
+        await _generateCard(moduleDir, singular, singularClass, fields);
+        print('  \x1B[32m✓\x1B[0m components/${singular}_card.dart');
+
+        // 7. Generate Form Component
+        await _generateForm(moduleDir, singular, singularClass, fields);
+        print('  \x1B[32m✓\x1B[0m components/${singular}_form.dart');
       }
 
       print('');
       print('\x1B[32m✓ Scaffold complete!\x1B[0m');
       print('');
-
-      if (!apiOnly) {
-        print('Add these routes to lib/app.dart:');
-        print('');
-        print('  Route(');
-        print("    path: '/$pluralName',");
-        print("    title: '${_toPascalCase(pluralName)}',");
-        print('    builder: (context, state) => const ${className}ListPage(),');
-        print('  ),');
-        print('  Route(');
-        print("    path: '/$pluralName/:id',");
-        print("    title: '$className Detail',");
-        print('    builder: (context, state) => ${className}DetailPage(');
-        print("      id: state.params['id']!,");
-        print('    ),');
-        print('  ),');
-        print('');
-        print('Add these imports:');
-        print("  import 'pages/$pluralName/index.dart';");
-        print("  import 'pages/$pluralName/[id].dart';");
-      }
-
+      print('Add routes to lib/app.dart:');
       print('');
-      print('API endpoints:');
-      print('  GET    /api/$pluralName      - List all');
-      print('  GET    /api/$pluralName?id=X - Get by ID');
-      print('  POST   /api/$pluralName      - Create');
-      print('  PUT    /api/$pluralName      - Update');
-      print('  DELETE /api/$pluralName      - Delete');
+      print('  // $className module');
+      print('  Route(');
+      print("    path: '/$moduleName',");
+      print('    builder: (_, __) => const ${className}ListPage(),');
+      print('  ),');
+      print('  Route(');
+      print("    path: '/$moduleName/new',");
+      print('    builder: (_, __) => const ${className}NewPage(),');
+      print('  ),');
+      print('  Route(');
+      print("    path: '/$moduleName/:id',");
+      print("    builder: (_, state) => ${className}DetailPage(id: state.params['id']!),");
+      print('  ),');
 
       return 0;
     } catch (e) {
@@ -131,10 +125,7 @@ class ScaffoldCommand extends Command<int> {
     for (final arg in args) {
       if (arg.contains(':')) {
         final parts = arg.split(':');
-        fields.add(FieldDef(
-          name: parts[0],
-          type: _normalizeType(parts[1]),
-        ));
+        fields.add(FieldDef(name: parts[0], type: _normalizeType(parts[1])));
       }
     }
     return fields;
@@ -144,156 +135,37 @@ class ScaffoldCommand extends Command<int> {
     switch (type.toLowerCase()) {
       case 'string':
       case 'str':
-      case 'text':
         return 'String';
       case 'int':
       case 'integer':
         return 'int';
       case 'double':
       case 'float':
-      case 'number':
         return 'double';
       case 'bool':
       case 'boolean':
         return 'bool';
-      case 'date':
-      case 'datetime':
-        return 'DateTime';
       default:
         return type;
     }
   }
 
-  String _toPascalCase(String s) {
-    if (s.isEmpty) return s;
-    return s
-        .split(RegExp(r'[_-]'))
-        .map((word) => word.isEmpty ? '' : word[0].toUpperCase() + word.substring(1))
-        .join('');
-  }
+  Future<void> _generateModel(String moduleDir, String className, List<FieldDef> fields) async {
+    final allFields = [FieldDef(name: 'id', type: 'String'), ...fields];
 
-  String _pluralize(String s) {
-    if (s.endsWith('y')) {
-      return '${s.substring(0, s.length - 1)}ies';
-    } else if (s.endsWith('s') || s.endsWith('x') || s.endsWith('ch') || s.endsWith('sh')) {
-      return '${s}es';
-    }
-    return '${s}s';
-  }
+    final paramFields = allFields.map((f) => '  final ${f.type}${f.name == 'id' ? '' : '?'} ${f.name};').join('\n');
+    final constructorParams = allFields.map((f) =>
+      f.name == 'id' ? 'required this.id' : 'this.${f.name}').join(', ');
+    final fromJsonFields = allFields.map((f) =>
+      "      ${f.name}: json['${f.name}'] as ${f.type}${f.name == 'id' ? '' : '?'},").join('\n');
+    final toJsonFields = allFields.map((f) =>
+      "      '${f.name}': ${f.name},").join('\n');
 
-  Future<void> _generateModel(String projectDir, String name, String className, List<FieldDef> fields, bool force) async {
-    final dir = Directory(p.join(projectDir, 'lib', 'models'));
-    await dir.create(recursive: true);
-
-    final file = File(p.join(dir.path, '$name.dart'));
-    if (file.existsSync() && !force) {
-      print('  \x1B[33m⚠\x1B[0m Model exists: lib/models/$name.dart (use --force to overwrite)');
-      return;
-    }
-
-    final content = _buildModelContent(className, fields);
-    await file.writeAsString(content);
-    print('  \x1B[32m✓\x1B[0m Created model: lib/models/$name.dart');
-  }
-
-  Future<void> _generateApi(String projectDir, String pluralName, String name, String className, List<FieldDef> fields, bool force) async {
-    final dir = Directory(p.join(projectDir, 'server', 'api'));
-    await dir.create(recursive: true);
-
-    final file = File(p.join(dir.path, '$pluralName.dart'));
-    if (file.existsSync() && !force) {
-      print('  \x1B[33m⚠\x1B[0m API exists: server/api/$pluralName.dart (use --force to overwrite)');
-      return;
-    }
-
-    final content = _buildApiContent(pluralName, name, className, fields);
-    await file.writeAsString(content);
-    print('  \x1B[32m✓\x1B[0m Created API: server/api/$pluralName.dart');
-  }
-
-  Future<void> _generateCard(String projectDir, String name, String className, List<FieldDef> fields, bool force) async {
-    final dir = Directory(p.join(projectDir, 'lib', 'components'));
-    await dir.create(recursive: true);
-
-    final file = File(p.join(dir.path, '${name}_card.dart'));
-    if (file.existsSync() && !force) {
-      print('  \x1B[33m⚠\x1B[0m Component exists: lib/components/${name}_card.dart (use --force to overwrite)');
-      return;
-    }
-
-    final content = _buildCardContent(name, className, fields);
-    await file.writeAsString(content);
-    print('  \x1B[32m✓\x1B[0m Created component: lib/components/${name}_card.dart');
-  }
-
-  Future<void> _generateListPage(String projectDir, String pluralName, String name, String className, List<FieldDef> fields, bool force) async {
-    final dir = Directory(p.join(projectDir, 'lib', 'pages', pluralName));
-    await dir.create(recursive: true);
-
-    final file = File(p.join(dir.path, 'index.dart'));
-    if (file.existsSync() && !force) {
-      print('  \x1B[33m⚠\x1B[0m Page exists: lib/pages/$pluralName/index.dart (use --force to overwrite)');
-      return;
-    }
-
-    final content = _buildListPageContent(pluralName, name, className, fields);
-    await file.writeAsString(content);
-    print('  \x1B[32m✓\x1B[0m Created page: lib/pages/$pluralName/index.dart');
-  }
-
-  Future<void> _generateDetailPage(String projectDir, String pluralName, String name, String className, List<FieldDef> fields, bool force) async {
-    final dir = Directory(p.join(projectDir, 'lib', 'pages', pluralName));
-    await dir.create(recursive: true);
-
-    final file = File(p.join(dir.path, '[id].dart'));
-    if (file.existsSync() && !force) {
-      print('  \x1B[33m⚠\x1B[0m Page exists: lib/pages/$pluralName/[id].dart (use --force to overwrite)');
-      return;
-    }
-
-    final content = _buildDetailPageContent(pluralName, name, className, fields);
-    await file.writeAsString(content);
-    print('  \x1B[32m✓\x1B[0m Created page: lib/pages/$pluralName/[id].dart');
-  }
-
-  // Content builders
-
-  String _buildModelContent(String className, List<FieldDef> fields) {
-    final allFields = [
-      FieldDef(name: 'id', type: 'String'),
-      ...fields,
-      FieldDef(name: 'createdAt', type: 'DateTime'),
-      FieldDef(name: 'updatedAt', type: 'DateTime'),
-    ];
-
-    final fieldDeclarations = allFields.map((f) => '  final ${f.type}? ${f.name};').join('\n');
-    final constructorParams = allFields.map((f) => 'this.${f.name}').join(', ');
-
-    final fromJsonFields = allFields.map((f) {
-      if (f.type == 'DateTime') {
-        return "      ${f.name}: json['${f.name}'] != null ? DateTime.parse(json['${f.name}']) : null,";
-      }
-      return "      ${f.name}: json['${f.name}'] as ${f.type}?,";
-    }).join('\n');
-
-    final toJsonFields = allFields.map((f) {
-      if (f.type == 'DateTime') {
-        return "      '${f.name}': ${f.name}?.toIso8601String(),";
-      }
-      return "      '${f.name}': ${f.name},";
-    }).join('\n');
-
-    final copyWithParams = allFields.map((f) => '    ${f.type}? ${f.name},').join('\n');
-    final copyWithAssignments = allFields.map((f) => '      ${f.name}: ${f.name} ?? this.${f.name},').join('\n');
-
-    return '''
-/// $className model
+    final content = '''
 class $className {
-$fieldDeclarations
+$paramFields
 
-  const $className({
-    $constructorParams,
-  });
+  const $className({$constructorParams});
 
   factory $className.fromJson(Map<String, dynamic> json) {
     return $className(
@@ -307,339 +179,333 @@ $toJsonFields
     };
   }
 
+  static List<$className> fromList(List<dynamic> list) {
+    return list.map((e) => $className.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
   $className copyWith({
-$copyWithParams
+${allFields.map((f) => '    ${f.type}? ${f.name},').join('\n')}
   }) {
     return $className(
-$copyWithAssignments
+${allFields.map((f) => '      ${f.name}: ${f.name} ?? this.${f.name},').join('\n')}
     );
-  }
-
-  @override
-  String toString() => '$className(id: \$id)';
-}
-''';
-  }
-
-  String _buildApiContent(String pluralName, String name, String className, List<FieldDef> fields) {
-    return '''
-import 'package:duxt/server.dart';
-
-/// $className API - /api/$pluralName
-///
-/// GET    /api/$pluralName      - List all ${pluralName}
-/// GET    /api/$pluralName?id=X - Get $name by ID
-/// POST   /api/$pluralName      - Create $name
-/// PUT    /api/$pluralName      - Update $name
-/// DELETE /api/$pluralName?id=X - Delete $name
-
-// In-memory storage (replace with database)
-final List<Map<String, dynamic>> _${pluralName}Store = [];
-int _nextId = 1;
-
-final handler = defineEventHandler((request) async {
-  switch (request.method) {
-    case 'GET':
-      final id = getQueryParam(request, 'id');
-      if (id != null) {
-        // Get by ID
-        final item = _${pluralName}Store.where((p) => p['id'] == id).firstOrNull;
-        if (item == null) {
-          return ApiResponse.notFound('$className not found');
-        }
-        return ApiResponse.json(item);
-      }
-      // List all
-      return ApiResponse.json({
-        'items': _${pluralName}Store,
-        'total': _${pluralName}Store.length,
-      });
-
-    case 'POST':
-      final body = request.json as Map<String, dynamic>?;
-      if (body == null) {
-        return ApiResponse.badRequest('Request body required');
-      }
-      final newItem = {
-        'id': (_nextId++).toString(),
-        ...body,
-        'createdAt': DateTime.now().toIso8601String(),
-        'updatedAt': DateTime.now().toIso8601String(),
-      };
-      _${pluralName}Store.add(newItem);
-      return ApiResponse.created(newItem);
-
-    case 'PUT':
-      final body = request.json as Map<String, dynamic>?;
-      if (body == null || body['id'] == null) {
-        return ApiResponse.badRequest('Request body with id required');
-      }
-      final index = _${pluralName}Store.indexWhere((p) => p['id'] == body['id']);
-      if (index == -1) {
-        return ApiResponse.notFound('$className not found');
-      }
-      final updated = {
-        ..._${pluralName}Store[index],
-        ...body,
-        'updatedAt': DateTime.now().toIso8601String(),
-      };
-      _${pluralName}Store[index] = updated;
-      return ApiResponse.json(updated);
-
-    case 'DELETE':
-      final id = getQueryParam(request, 'id');
-      if (id == null) {
-        return ApiResponse.badRequest('id query parameter required');
-      }
-      final index = _${pluralName}Store.indexWhere((p) => p['id'] == id);
-      if (index == -1) {
-        return ApiResponse.notFound('$className not found');
-      }
-      _${pluralName}Store.removeAt(index);
-      return ApiResponse.noContent();
-
-    default:
-      return ApiResponse.methodNotAllowed();
-  }
-});
-''';
-  }
-
-  String _buildCardContent(String name, String className, List<FieldDef> fields) {
-    final displayField = fields.isNotEmpty ? fields.first.name : 'id';
-    final subtitleField = fields.length > 1 ? fields[1].name : null;
-
-    return '''
-import 'package:jaspr/dom.dart';
-import 'package:jaspr/jaspr.dart';
-import '../models/$name.dart';
-
-class ${className}Card extends StatelessComponent {
-  final $className item;
-  final String? linkTo;
-
-  const ${className}Card({
-    super.key,
-    required this.item,
-    this.linkTo,
-  });
-
-  @override
-  Component build(BuildContext context) {
-    final content = div(
-      classes: 'p-4 bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow',
-      [
-        div(classes: 'flex justify-between items-start', [
-          div(classes: 'flex-1', [
-            h3(classes: 'text-lg font-semibold text-gray-900', [
-              text(item.$displayField ?? 'Untitled'),
-            ]),
-${subtitleField != null ? '''            p(classes: 'text-gray-600 mt-1', [
-              text(item.$subtitleField ?? ''),
-            ]),''' : ''}
-          ]),
-          span(classes: 'text-xs text-gray-400', [
-            text('#\${item.id}'),
-          ]),
-        ]),
-        div(classes: 'mt-3 text-xs text-gray-400', [
-          text('Created: \${item.createdAt?.toString().split('.').first ?? "N/A"}'),
-        ]),
-      ],
-    );
-
-    if (linkTo != null) {
-      return a(href: linkTo, [content]);
-    }
-    return content;
   }
 }
 ''';
+    await File(p.join(moduleDir, 'model.dart')).writeAsString(content);
   }
 
-  String _buildListPageContent(String pluralName, String name, String className, List<FieldDef> fields) {
-    final pluralClassName = _toPascalCase(pluralName);
+  Future<void> _generateApi(String moduleDir, String className, String moduleName) async {
+    final content = '''
+import 'package:duxt/duxt.dart';
+import 'model.dart';
 
-    return '''
-import 'package:jaspr/dom.dart';
+/// API calls for $moduleName
+class ${className}Api {
+  static Future<List<$className>> getAll() async {
+    final data = await Api.get('/$moduleName');
+    return $className.fromList(data as List);
+  }
+
+  static Future<$className> getOne(String id) async {
+    final data = await Api.get('/$moduleName/\$id');
+    return $className.fromJson(data as Map<String, dynamic>);
+  }
+
+  static Future<$className> create($className item) async {
+    final data = await Api.post('/$moduleName', body: item.toJson());
+    return $className.fromJson(data as Map<String, dynamic>);
+  }
+
+  static Future<$className> update(String id, $className item) async {
+    final data = await Api.put('/$moduleName/\$id', body: item.toJson());
+    return $className.fromJson(data as Map<String, dynamic>);
+  }
+
+  static Future<void> delete(String id) async {
+    await Api.delete('/$moduleName/\$id');
+  }
+}
+''';
+    await File(p.join(moduleDir, 'api.dart')).writeAsString(content);
+  }
+
+  Future<void> _generateListPage(String moduleDir, String moduleName, String className, List<FieldDef> fields) async {
+    final pluralClass = _toPascalCase(moduleName);
+    final singular = _singularize(moduleName);
+
+    final content = '''
 import 'package:jaspr/jaspr.dart';
-import '../../models/$name.dart';
-import '../../components/${name}_card.dart';
+import 'package:duxt/duxt.dart';
+import '../model.dart';
+import '../api.dart';
+import '../components/${singular}_card.dart';
 
-class ${className}ListPage extends StatelessComponent {
-  const ${className}ListPage({super.key});
-
-  // Sample data - replace with actual data fetching
-  List<$className> get _items => [
-    $className(
-      id: '1',
-${fields.map((f) => "      ${f.name}: ${_sampleValue(f.type, f.name)},").join('\n')}
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    ),
-    $className(
-      id: '2',
-${fields.map((f) => "      ${f.name}: ${_sampleValue(f.type, f.name, 2)},").join('\n')}
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    ),
-  ];
+class ${pluralClass}ListPage extends StatefulComponent {
+  const ${pluralClass}ListPage({super.key});
 
   @override
-  Component build(BuildContext context) {
+  State createState() => _${pluralClass}ListPageState();
+}
+
+class _${pluralClass}ListPageState extends State<${pluralClass}ListPage> with DuxtState<List<$className>> {
+  @override
+  Future<List<$className>> load() => ${className}Api.getAll();
+
+  @override
+  Component buildLoading() {
+    return div(classes: 'flex justify-center py-12', [
+      text('Loading...'),
+    ]);
+  }
+
+  @override
+  Component buildError(Object error) {
+    return div(classes: 'text-red-600 py-12', [
+      text('Error: \$error'),
+    ]);
+  }
+
+  @override
+  Component buildData(List<$className> items) {
     return div(classes: 'space-y-6', [
       // Header
       div(classes: 'flex justify-between items-center', [
         h1(classes: 'text-3xl font-bold text-gray-900', [
-          text('$pluralClassName'),
+          text('$pluralClass'),
         ]),
         a(
-          href: '/$pluralName/new',
+          href: '/$moduleName/new',
           classes: 'px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700',
-          [text('Add $className')],
+          [text('New $className')],
         ),
       ]),
-
       // List
-      div(classes: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4', [
-        for (final item in _items)
-          ${className}Card(
-            item: item,
-            linkTo: '/$pluralName/\${item.id}',
-          ),
-      ]),
-
-      // Empty state
-      if (_items.isEmpty)
-        div(classes: 'text-center py-12', [
-          p(classes: 'text-gray-500', [
-            text('No $pluralName found'),
-          ]),
+      if (items.isEmpty)
+        div(classes: 'text-center py-12 text-gray-500', [
+          text('No $moduleName yet'),
+        ])
+      else
+        div(classes: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6', [
+          for (final item in items)
+            ${className}Card(item: item),
         ]),
     ]);
   }
 }
 ''';
+    await File(p.join(moduleDir, 'pages', 'index.dart')).writeAsString(content);
   }
 
-  String _buildDetailPageContent(String pluralName, String name, String className, List<FieldDef> fields) {
+  Future<void> _generateDetailPage(String moduleDir, String moduleName, String className, List<FieldDef> fields) async {
+    final pluralClass = _toPascalCase(moduleName);
+
     final fieldDisplays = fields.map((f) => '''
-          div(classes: 'border-b pb-3', [
+          div(classes: 'py-4 border-b', [
             dt(classes: 'text-sm text-gray-500', [text('${_toTitleCase(f.name)}')]),
-            dd(classes: 'mt-1 text-gray-900', [text(item.${f.name}?.toString() ?? 'N/A')]),
+            dd(classes: 'mt-1 text-gray-900', [text('\${item.${f.name} ?? "-"}')]),
           ]),''').join('\n');
 
-    return '''
-import 'package:jaspr/dom.dart';
+    final content = '''
 import 'package:jaspr/jaspr.dart';
-import '../../models/$name.dart';
+import 'package:duxt/duxt.dart';
+import '../model.dart';
+import '../api.dart';
 
-class ${className}DetailPage extends StatelessComponent {
+class ${pluralClass}DetailPage extends StatefulComponent {
   final String id;
 
-  const ${className}DetailPage({
-    super.key,
-    required this.id,
-  });
-
-  // Sample data - replace with actual data fetching
-  $className? get item => $className(
-    id: id,
-${fields.map((f) => "    ${f.name}: ${_sampleValue(f.type, f.name)},").join('\n')}
-    createdAt: DateTime.now(),
-    updatedAt: DateTime.now(),
-  );
+  const ${pluralClass}DetailPage({super.key, required this.id});
 
   @override
-  Component build(BuildContext context) {
-    if (item == null) {
-      return div(classes: 'text-center py-12', [
-        h1(classes: 'text-2xl font-bold text-gray-900', [text('$className Not Found')]),
-        p(classes: 'text-gray-600 mt-2', [text('The $name you\\'re looking for doesn\\'t exist.')]),
-        a(
-          href: '/$pluralName',
-          classes: 'text-indigo-600 hover:underline mt-4 inline-block',
-          [text('← Back to $pluralName')],
-        ),
-      ]);
-    }
+  State createState() => _${pluralClass}DetailPageState();
+}
 
+class _${pluralClass}DetailPageState extends State<${pluralClass}DetailPage> with DuxtState<$className> {
+  @override
+  Future<$className> load() => ${className}Api.getOne(component.id);
+
+  @override
+  Component buildLoading() {
+    return div(classes: 'flex justify-center py-12', [text('Loading...')]);
+  }
+
+  @override
+  Component buildError(Object error) {
+    return div(classes: 'text-red-600 py-12', [text('Error: \$error')]);
+  }
+
+  @override
+  Component buildData($className item) {
     return div(classes: 'max-w-2xl mx-auto', [
-      // Back link
-      a(
-        href: '/$pluralName',
-        classes: 'text-indigo-600 hover:underline mb-4 inline-block',
-        [text('← Back to $pluralName')],
-      ),
-
       // Header
-      div(classes: 'flex justify-between items-start mb-6', [
+      div(classes: 'flex justify-between items-center mb-8', [
         h1(classes: 'text-3xl font-bold text-gray-900', [
-          text('$className #\$id'),
+          text('$className Details'),
         ]),
         div(classes: 'flex gap-2', [
           a(
-            href: '/$pluralName/\$id/edit',
-            classes: 'px-3 py-1 border rounded hover:bg-gray-50',
-            [text('Edit')],
-          ),
-          button(
-            classes: 'px-3 py-1 border border-red-300 text-red-600 rounded hover:bg-red-50',
-            [text('Delete')],
+            href: '/$moduleName',
+            classes: 'px-4 py-2 border rounded-lg hover:bg-gray-50',
+            [text('Back')],
           ),
         ]),
       ]),
-
       // Details
-      div(classes: 'bg-white rounded-lg shadow-sm border p-6', [
-        dl(classes: 'space-y-4', [
-$fieldDisplays
-          div(classes: 'border-b pb-3', [
-            dt(classes: 'text-sm text-gray-500', [text('Created')]),
-            dd(classes: 'mt-1 text-gray-900', [
-              text(item!.createdAt?.toString().split('.').first ?? 'N/A'),
-            ]),
-          ]),
-          div([
-            dt(classes: 'text-sm text-gray-500', [text('Updated')]),
-            dd(classes: 'mt-1 text-gray-900', [
-              text(item!.updatedAt?.toString().split('.').first ?? 'N/A'),
-            ]),
-          ]),
+      dl(classes: 'divide-y', [
+        div(classes: 'py-4 border-b', [
+          dt(classes: 'text-sm text-gray-500', [text('ID')]),
+          dd(classes: 'mt-1 text-gray-900', [text(item.id)]),
         ]),
+$fieldDisplays
       ]),
     ]);
   }
 }
 ''';
+    await File(p.join(moduleDir, 'pages', '[id].dart')).writeAsString(content);
   }
 
-  String _sampleValue(String type, String fieldName, [int index = 1]) {
-    switch (type) {
-      case 'String':
-        return "'Sample ${_toTitleCase(fieldName)} $index'";
-      case 'int':
-        return '$index';
-      case 'double':
-        return '${index}.0';
-      case 'bool':
-        return 'true';
-      default:
-        return 'null';
-    }
+  Future<void> _generateNewPage(String moduleDir, String moduleName, String className, List<FieldDef> fields) async {
+    final pluralClass = _toPascalCase(moduleName);
+    final singular = _singularize(moduleName);
+
+    final content = '''
+import 'package:jaspr/jaspr.dart';
+import '../components/${singular}_form.dart';
+
+class ${pluralClass}NewPage extends StatelessComponent {
+  const ${pluralClass}NewPage({super.key});
+
+  @override
+  Component build(BuildContext context) {
+    return div(classes: 'max-w-2xl mx-auto', [
+      // Header
+      div(classes: 'flex justify-between items-center mb-8', [
+        h1(classes: 'text-3xl font-bold text-gray-900', [
+          text('New $className'),
+        ]),
+        a(
+          href: '/$moduleName',
+          classes: 'px-4 py-2 border rounded-lg hover:bg-gray-50',
+          [text('Cancel')],
+        ),
+      ]),
+      // Form
+      ${className}Form(),
+    ]);
+  }
+}
+''';
+    await File(p.join(moduleDir, 'pages', 'new.dart')).writeAsString(content);
+  }
+
+  Future<void> _generateCard(String moduleDir, String singular, String className, List<FieldDef> fields) async {
+    final displayField = fields.isNotEmpty ? fields.first.name : 'id';
+
+    final content = '''
+import 'package:jaspr/jaspr.dart';
+import '../model.dart';
+
+class ${className}Card extends StatelessComponent {
+  final $className item;
+
+  const ${className}Card({super.key, required this.item});
+
+  @override
+  Component build(BuildContext context) {
+    return a(
+      href: '/${_pluralize(singular)}/\${item.id}',
+      classes: 'block p-6 bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow',
+      [
+        h3(classes: 'text-lg font-semibold text-gray-900', [
+          text('\${item.$displayField ?? "Untitled"}'),
+        ]),
+        p(classes: 'text-sm text-gray-500 mt-1', [
+          text('ID: \${item.id}'),
+        ]),
+      ],
+    );
+  }
+}
+''';
+    await File(p.join(moduleDir, 'components', '${singular}_card.dart')).writeAsString(content);
+  }
+
+  Future<void> _generateForm(String moduleDir, String singular, String className, List<FieldDef> fields) async {
+    final inputFields = fields.map((f) => '''
+        div(classes: 'space-y-1', [
+          label(classes: 'block text-sm font-medium text-gray-700', [
+            text('${_toTitleCase(f.name)}'),
+          ]),
+          input(
+            type: InputType.text,
+            classes: 'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500',
+            [],
+          ),
+        ]),''').join('\n');
+
+    final content = '''
+import 'package:jaspr/jaspr.dart';
+
+class ${className}Form extends StatelessComponent {
+  const ${className}Form({super.key});
+
+  @override
+  Component build(BuildContext context) {
+    return form(
+      classes: 'space-y-6',
+      [
+$inputFields
+        // Submit
+        div(classes: 'flex justify-end', [
+          button(
+            type: ButtonType.submit,
+            classes: 'px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700',
+            [text('Save')],
+          ),
+        ]),
+      ],
+    );
+  }
+}
+''';
+    await File(p.join(moduleDir, 'components', '${singular}_form.dart')).writeAsString(content);
+  }
+
+  // Helpers
+
+  String _toPascalCase(String s) {
+    if (s.isEmpty) return s;
+    return s.split(RegExp(r'[_-]'))
+        .map((w) => w.isEmpty ? '' : w[0].toUpperCase() + w.substring(1))
+        .join('');
   }
 
   String _toTitleCase(String s) {
-    return s.replaceAllMapped(
-      RegExp(r'([A-Z])|^([a-z])'),
-      (m) => m.group(1) != null ? ' ${m.group(1)}' : m.group(2)!.toUpperCase(),
-    ).trim();
+    if (s.isEmpty) return s;
+    return s[0].toUpperCase() + s.substring(1).replaceAllMapped(
+      RegExp(r'[A-Z]'), (m) => ' ${m.group(0)}');
+  }
+
+  String _singularize(String s) {
+    if (s.endsWith('ies')) return '${s.substring(0, s.length - 3)}y';
+    if (s.endsWith('es')) return s.substring(0, s.length - 2);
+    if (s.endsWith('s')) return s.substring(0, s.length - 1);
+    return s;
+  }
+
+  String _pluralize(String s) {
+    if (s.endsWith('y')) return '${s.substring(0, s.length - 1)}ies';
+    if (s.endsWith('s') || s.endsWith('x') || s.endsWith('ch') || s.endsWith('sh')) {
+      return '${s}es';
+    }
+    return '${s}s';
   }
 }
 
 class FieldDef {
   final String name;
   final String type;
-
   FieldDef({required this.name, required this.type});
 }

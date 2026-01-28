@@ -1,27 +1,21 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
 
-/// Generates Jaspr Router configuration from /pages directory
+/// Generates Jaspr Router configuration from module-based structure
 ///
-/// Conventions (matching Nuxt):
-/// - pages/index.dart -> /
-/// - pages/about.dart -> /about
-/// - pages/posts/index.dart -> /posts
-/// - pages/posts/[id].dart -> /posts/:id
-/// - pages/posts/[...slug].dart -> /posts/*
-/// - pages/users/[userId]/posts/[postId].dart -> /users/:userId/posts/:postId
+/// Conventions:
+/// - lib/<module>/pages/index.dart -> /<module> (or / for "home" module)
+/// - lib/<module>/pages/[id].dart -> /<module>/:id
+/// - lib/<module>/pages/new.dart -> /<module>/new
+/// - lib/<module>/pages/[id]/edit.dart -> /<module>/:id/edit
 class RouterGenerator {
   static Future<void> generate(String projectDir) async {
-    // Check both lib/pages and pages directories
-    var pagesDir = Directory(p.join(projectDir, 'lib', 'pages'));
-    if (!pagesDir.existsSync()) {
-      pagesDir = Directory(p.join(projectDir, 'pages'));
-    }
+    final libDir = Directory(p.join(projectDir, 'lib'));
     final outputDir = Directory(p.join(projectDir, '.duxt'));
     final outputFile = File(p.join(outputDir.path, 'routes.g.dart'));
 
-    if (!pagesDir.existsSync()) {
-      print('  No pages directory found (checked lib/pages and pages)');
+    if (!libDir.existsSync()) {
+      print('  No lib directory found');
       return;
     }
 
@@ -30,8 +24,33 @@ class RouterGenerator {
       outputDir.createSync(recursive: true);
     }
 
-    // Scan pages
-    final routes = await _scanPages(pagesDir, pagesDir.path);
+    // Scan all modules
+    final routes = <RouteInfo>[];
+    await for (final entity in libDir.list()) {
+      if (entity is Directory) {
+        final moduleName = p.basename(entity.path);
+
+        // Skip shared directory
+        if (moduleName == 'shared') continue;
+
+        final pagesDir = Directory(p.join(entity.path, 'pages'));
+        if (pagesDir.existsSync()) {
+          final moduleRoutes = await _scanModulePages(
+            pagesDir,
+            pagesDir.path,
+            moduleName,
+          );
+          routes.addAll(moduleRoutes);
+        }
+      }
+    }
+
+    // Also check for old-style lib/pages directory (backwards compat)
+    final oldPagesDir = Directory(p.join(projectDir, 'lib', 'pages'));
+    if (oldPagesDir.existsSync()) {
+      final oldRoutes = await _scanModulePages(oldPagesDir, oldPagesDir.path, '');
+      routes.addAll(oldRoutes);
+    }
 
     // Sort routes (static before dynamic, shorter before longer)
     routes.sort(_compareRoutes);
@@ -40,27 +59,33 @@ class RouterGenerator {
     final code = _generateRouterCode(routes, projectDir);
     await outputFile.writeAsString(code);
 
-    print('  Generated ${routes.length} routes');
+    print('  Generated ${routes.length} routes from ${_countModules(routes)} modules');
   }
 
-  static Future<List<RouteInfo>> _scanPages(Directory dir, String basePath) async {
+  static int _countModules(List<RouteInfo> routes) {
+    return routes.map((r) => r.moduleName).toSet().length;
+  }
+
+  static Future<List<RouteInfo>> _scanModulePages(
+    Directory dir,
+    String basePath,
+    String moduleName,
+  ) async {
     final routes = <RouteInfo>[];
 
-    await for (final entity in dir.list()) {
+    await for (final entity in dir.list(recursive: true)) {
       if (entity is File && entity.path.endsWith('.dart')) {
-        final route = _fileToRoute(entity.path, basePath);
+        final route = _fileToRoute(entity.path, basePath, moduleName);
         if (route != null) {
           routes.add(route);
         }
-      } else if (entity is Directory) {
-        routes.addAll(await _scanPages(entity, basePath));
       }
     }
 
     return routes;
   }
 
-  static RouteInfo? _fileToRoute(String filePath, String basePath) {
+  static RouteInfo? _fileToRoute(String filePath, String basePath, String moduleName) {
     // Get relative path from pages/
     var relativePath = p.relative(filePath, from: basePath);
 
@@ -74,8 +99,15 @@ class RouterGenerator {
       relativePath = relativePath.replaceAll('/index', '');
     }
 
-    // Convert to route path
-    var routePath = '/' + relativePath;
+    // Build route path
+    String routePath;
+    if (moduleName == 'home' || moduleName.isEmpty) {
+      // Home module maps to root
+      routePath = relativePath.isEmpty ? '/' : '/$relativePath';
+    } else {
+      // Other modules get prefixed
+      routePath = relativePath.isEmpty ? '/$moduleName' : '/$moduleName/$relativePath';
+    }
 
     // Convert [param] to :param (Nuxt style to Jaspr style)
     routePath = routePath.replaceAllMapped(
@@ -94,8 +126,7 @@ class RouterGenerator {
     }
 
     // Extract component name from file
-    final fileName = p.basenameWithoutExtension(filePath);
-    final componentName = _toComponentName(fileName, relativePath);
+    final componentName = _toComponentName(relativePath, moduleName);
 
     // Detect dynamic parameters
     final params = <String>[];
@@ -108,14 +139,14 @@ class RouterGenerator {
       path: routePath,
       filePath: filePath,
       componentName: componentName,
+      moduleName: moduleName,
       params: params,
       isCatchAll: routePath.contains('*'),
     );
   }
 
-  static String _toComponentName(String fileName, String relativePath) {
+  static String _toComponentName(String relativePath, String moduleName) {
     // Convert file path to PascalCase component name
-    // pages/posts/[id].dart -> PostsIdPage
     final parts = relativePath
         .replaceAll('[', '')
         .replaceAll(']', '')
@@ -125,16 +156,20 @@ class RouterGenerator {
         .map(_toPascalCase)
         .toList();
 
+    final modulePrefix = _toPascalCase(moduleName);
+
     if (parts.isEmpty) {
-      return 'IndexPage';
+      return moduleName.isEmpty ? 'IndexPage' : '${modulePrefix}Page';
     }
 
-    return '${parts.join('')}Page';
+    return '$modulePrefix${parts.join('')}Page';
   }
 
   static String _toPascalCase(String s) {
     if (s.isEmpty) return s;
-    return s[0].toUpperCase() + s.substring(1);
+    return s.split(RegExp(r'[_-]'))
+        .map((w) => w.isEmpty ? '' : w[0].toUpperCase() + w.substring(1))
+        .join('');
   }
 
   static int _compareRoutes(RouteInfo a, RouteInfo b) {
@@ -161,17 +196,17 @@ class RouterGenerator {
     buffer.writeln('// GENERATED CODE - DO NOT MODIFY BY HAND');
     buffer.writeln('// Generated by Duxt');
     buffer.writeln('');
-    buffer.writeln("import 'package:duxt/duxt.dart';");
+    buffer.writeln("import 'package:jaspr_router/jaspr_router.dart';");
     buffer.writeln('');
 
     // Import all page files
     for (final route in routes) {
-      final importPath = p.relative(route.filePath, from: projectDir);
-      buffer.writeln("import '../$importPath' as ${_toImportAlias(route)};");
+      final importPath = p.relative(route.filePath, from: p.join(projectDir, 'lib'));
+      buffer.writeln("import '$importPath' as ${_toImportAlias(route)};");
     }
 
     buffer.writeln('');
-    buffer.writeln('/// Generated routes from /pages directory');
+    buffer.writeln('/// Generated routes from modules');
     buffer.writeln('final generatedRoutes = <Route>[');
 
     for (final route in routes) {
@@ -180,10 +215,9 @@ class RouterGenerator {
       buffer.writeln('    builder: (context, state) {');
 
       if (route.params.isNotEmpty) {
-        buffer.writeln('      final params = state.pathParameters;');
         buffer.writeln('      return ${_toImportAlias(route)}.${route.componentName}(');
         for (final param in route.params) {
-          buffer.writeln("        $param: params['$param']!,");
+          buffer.writeln("        $param: state.params['$param']!,");
         }
         buffer.writeln('      );');
       } else {
@@ -200,7 +234,8 @@ class RouterGenerator {
   }
 
   static String _toImportAlias(RouteInfo route) {
-    return 'page_${route.componentName.toLowerCase()}';
+    final safeName = route.componentName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
+    return 'page_$safeName';
   }
 }
 
@@ -209,6 +244,7 @@ class RouteInfo {
   final String path;
   final String filePath;
   final String componentName;
+  final String moduleName;
   final List<String> params;
   final bool isCatchAll;
 
@@ -216,10 +252,11 @@ class RouteInfo {
     required this.path,
     required this.filePath,
     required this.componentName,
+    required this.moduleName,
     required this.params,
     required this.isCatchAll,
   });
 
   @override
-  String toString() => 'RouteInfo($path -> $componentName)';
+  String toString() => 'RouteInfo($path -> $componentName [$moduleName])';
 }

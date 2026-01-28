@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-01-28
+
+### Changed
+- **Module-based architecture** - Opinionated Rails-like structure
+  ```
+  lib/
+  ├── posts/           # Module
+  │   ├── pages/       # Routes: /posts, /posts/:id
+  │   ├── components/  # Module components
+  │   ├── model.dart   # Data model
+  │   └── api.dart     # API calls
+  ├── shared/          # Cross-module
+  │   └── layouts/
+  └── app.dart
+  ```
+
+### Added
+- **`Api` class** - Simple static HTTP client
+  ```dart
+  final posts = await Api.get('/posts');
+  await Api.post('/posts', body: {'title': 'Hello'});
+  ```
+- **`DuxtState` mixin** - SPA data loading with loading/error states
+- **`DuxtMultiState` mixin** - Multiple data sources
+- **`duxt g module <name>`** - Generate new module
+- **`duxt g layout <name>`** - Generate layout
+- **`duxt --version`** - Show version
+- Grouped help output
+
+### Removed
+- `duxt add` command (merged into `duxt g`)
+- Old flat structure (`lib/pages/`, `lib/components/`, etc.)
+
+### Fixed
+- Router generator now scans module-based structure
+- Scaffold generates proper module structure
+
 ## [0.1.1] - 2026-01-28
 
 ### Fixed
