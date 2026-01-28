@@ -1,7 +1,9 @@
 name: duxt
-description: A Nuxt-like meta-framework for Jaspr - file-based routing, layouts, middleware, and more.
+description: A Nuxt-like meta-framework for Jaspr - file-based routing, layouts, middleware, scaffolding, and more.
 version: 0.1.0
-homepage: https://github.com/example/duxt
+homepage: https://github.com/flakerimi/duxt
+repository: https://github.com/flakerimi/duxt
+issue_tracker: https://github.com/flakerimi/duxt/issues
 
 environment:
   sdk: ^3.0.0
@@ -21,3 +23,10 @@ dev_dependencies:
 
 executables:
   duxt: duxt
+
+topics:
+  - web
+  - framework
+  - jaspr
+  - nuxt
+  - routing
