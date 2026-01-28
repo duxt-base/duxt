@@ -15,11 +15,7 @@ A Nuxt-like meta-framework for [Jaspr](https://jaspr.dev) - bringing file-based 
 ## Installation
 
 ```bash
-# Install globally
-dart pub global activate --source path /path/to/duxt
-
-# Or run directly
-dart run /path/to/duxt/bin/duxt.dart <command>
+dart pub global activate duxt
 ```
 
 ## Quick Start
