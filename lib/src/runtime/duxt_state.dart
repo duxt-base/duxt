@@ -9,7 +9,10 @@ import 'package:jaspr/jaspr.dart';
 ///   Future<List<Post>> load() => PostsApi.getAll();
 ///
 ///   @override
-///   Component buildLoading() => Spinner();
+///   Component buildLoading() => div([text('Loading...')]);
+///
+///   @override
+///   Component buildError(Object e) => div([text('Error: $e')]);
 ///
 ///   @override
 ///   Component buildData(List<Post> posts) => PostList(posts: posts);
@@ -24,10 +27,10 @@ mixin DuxtState<T> on State {
   Future<T> load();
 
   /// Override to build loading state.
-  Component buildLoading() => const Text('Loading...');
+  Component buildLoading();
 
   /// Override to build error state.
-  Component buildError(Object error) => Text('Error: $error');
+  Component buildError(Object error);
 
   /// Override to build data state.
   Component buildData(T data);
@@ -87,6 +90,12 @@ mixin DuxtState<T> on State {
 ///   };
 ///
 ///   @override
+///   Component buildLoading() => div([text('Loading...')]);
+///
+///   @override
+///   Component buildError(Object e) => div([text('Error: $e')]);
+///
+///   @override
 ///   Component buildData(Map<String, dynamic> data) {
 ///     final posts = data['posts'] as List<Post>;
 ///     final users = data['users'] as List<User>;
@@ -103,10 +112,10 @@ mixin DuxtMultiState on State {
   Map<String, Future<dynamic> Function()> get loaders;
 
   /// Override to build loading state.
-  Component buildLoading() => const Text('Loading...');
+  Component buildLoading();
 
   /// Override to build error state.
-  Component buildError(Object error) => Text('Error: $error');
+  Component buildError(Object error);
 
   /// Override to build data state.
   Component buildData(Map<String, dynamic> data);

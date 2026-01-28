@@ -61,6 +61,13 @@ class ScaffoldCommand extends Command<int> {
     try {
       // Create module directories
       final moduleDir = p.join(projectDir, 'lib', moduleName);
+
+      // Check if module exists
+      if (Directory(moduleDir).existsSync() && !force) {
+        print('\x1B[31m✗\x1B[0m Module "$moduleName" already exists. Use --force to overwrite.');
+        return 1;
+      }
+
       await Directory(p.join(moduleDir, 'pages')).create(recursive: true);
       await Directory(p.join(moduleDir, 'components')).create(recursive: true);
 
