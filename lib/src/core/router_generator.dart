@@ -109,7 +109,7 @@ class RouterGenerator {
       routePath = relativePath.isEmpty ? '/$moduleName' : '/$moduleName/$relativePath';
     }
 
-    // Convert [param] to :param (Nuxt style to Jaspr style)
+    // Convert [param] to :param (standard to Jaspr style)
     routePath = routePath.replaceAllMapped(
       RegExp(r'\[\.\.\.(\w+)\]'),
       (m) => '*', // Catch-all

@@ -1,14 +1,13 @@
 # Duxt
 
-A Nuxt-like meta-framework for [Jaspr](https://jaspr.dev) - bringing file-based routing, layouts, and Rails-like scaffolding to Dart web development.
+A meta-framework for [Jaspr](https://jaspr.dev) with module-based architecture, file-based routing, and Rails-like scaffolding.
 
 ## Features
 
-- **File-based Routing** - Pages in `lib/pages/` auto-generate routes
-- **Layouts System** - Reusable layout wrappers
-- **Middleware** - Route guards for auth, redirects, etc.
-- **API Routes** - Server endpoints in `server/api/`
-- **Composables** - Vue-like reactive state hooks
+- **Module-Based Architecture** - Organize code by feature
+- **File-Based Routing** - Pages auto-generate routes
+- **Simple API Client** - Static `Api` class for HTTP calls
+- **SPA State Management** - `DuxtState` mixin for loading/error handling
 - **Scaffold Generator** - Rails-like CRUD generation
 - **Tailwind CSS** - Built-in integration
 
@@ -21,153 +20,113 @@ dart pub global activate duxt
 ## Quick Start
 
 ```bash
-# Create a new project
 duxt create my-app
 cd my-app
 dart pub get
-
-# Start development server
 duxt dev
-
-# Or start production server
-duxt build
-duxt start
 ```
-
-## CLI Commands
-
-| Command | Description |
-|---------|-------------|
-| `duxt create <name>` | Create a new Duxt project |
-| `duxt dev [--port]` | Start dev server with hot reload |
-| `duxt start [--port]` | Start production server |
-| `duxt build` | Build for production |
-| `duxt generate` | Generate static site |
-| `duxt g <type> <name> [fields]` | Generate with fields |
-| `duxt add <type> <name>` | Add a file |
-| `duxt scaffold <name> [fields]` | Full CRUD scaffold |
-
-## Generators
-
-### Generate Command (`duxt g`)
-
-```bash
-# Generate a model
-duxt g model post title:String content:String
-
-# Generate a component
-duxt g component card title:String
-
-# Generate a page
-duxt g page about
-
-# Generate a dynamic page
-duxt g page 'posts/[slug]'
-
-# Generate an API route
-duxt g api users
-
-# Generate middleware
-duxt g middleware auth
-```
-
-**Type shortcuts:** `p`=page, `c`=component, `m`=model, `a`=api, `mw`=middleware, `co`=composable
-
-### Scaffold Command
-
-Generate full CRUD (model, pages, component, API):
-
-```bash
-duxt scaffold product name:String price:double description:String
-
-# Generates:
-# - lib/models/product.dart
-# - lib/pages/products/index.dart
-# - lib/pages/products/[id].dart
-# - lib/components/product_card.dart
-# - server/api/products.dart
-```
-
-Options:
-- `--api-only` - Only generate model and API
-- `--force` - Overwrite existing files
 
 ## Project Structure
 
 ```
 my-app/
 ├── lib/
-│   ├── main.client.dart      # Entry point
-│   ├── app.dart              # Router configuration
-│   ├── pages/                # File-based routing
-│   │   ├── index.dart        # → /
-│   │   ├── about.dart        # → /about
-│   │   └── posts/
-│   │       └── [slug].dart   # → /posts/:slug
-│   ├── layouts/              # Layout components
-│   │   └── default.dart
-│   ├── components/           # Reusable components
-│   └── models/               # Data models
-├── middleware/               # Route middleware
-├── composables/              # Shared reactive logic
-├── server/
-│   └── api/                  # API routes
-├── web/
-│   ├── index.html
-│   └── styles.tw.css         # Tailwind CSS
-├── duxt.config.dart          # Configuration
-└── pubspec.yaml
+│   ├── posts/                   # Module
+│   │   ├── pages/
+│   │   │   ├── index.dart       # /posts
+│   │   │   └── [id].dart        # /posts/:id
+│   │   ├── components/
+│   │   │   └── post_card.dart
+│   │   ├── model.dart
+│   │   └── api.dart
+│   ├── shared/
+│   │   └── layouts/
+│   │       └── default.dart
+│   └── app.dart
+└── web/
+    └── index.html
 ```
 
-## Routing Conventions
+## CLI Commands
 
-| File | Route |
-|------|-------|
-| `pages/index.dart` | `/` |
-| `pages/about.dart` | `/about` |
-| `pages/posts/index.dart` | `/posts` |
-| `pages/posts/[id].dart` | `/posts/:id` |
-| `pages/posts/[...slug].dart` | `/posts/*` |
+| Command | Description |
+|---------|-------------|
+| `duxt create <name>` | Create new project |
+| `duxt dev [--port]` | Start dev server |
+| `duxt build` | Build for production |
+| `duxt start [--port]` | Start production server |
+| `duxt g <type> <name>` | Generate file |
+| `duxt scaffold <name>` | Generate full CRUD module |
 
-## Example Page
+## Generators
+
+```bash
+# Generate module
+duxt g module posts
+
+# Generate page
+duxt g page posts/[id]
+
+# Generate component
+duxt g component posts/card title:String
+
+# Generate model
+duxt g model posts title:String content:String
+
+# Full CRUD scaffold
+duxt scaffold posts title:String content:String author:String
+```
+
+**Type shortcuts:** `p`=page, `c`=component, `m`=model, `a`=api, `l`=layout
+
+## Api Class
 
 ```dart
-import 'package:jaspr/dom.dart';
-import 'package:jaspr/jaspr.dart';
+import 'package:duxt/duxt.dart';
 
-class AboutPage extends StatelessComponent {
-  const AboutPage({super.key});
+// Configure once
+Api.configure(baseUrl: 'https://api.example.com');
+Api.setAuth('your-token');
 
-  @override
-  Component build(BuildContext context) {
-    return div(classes: 'container mx-auto p-4', [
-      h1(classes: 'text-3xl font-bold', [
-        text('About Us'),
-      ]),
-      p(classes: 'mt-4 text-gray-600', [
-        text('Welcome to our site!'),
-      ]),
-    ]);
-  }
+// Use anywhere
+final posts = await Api.get('/posts');
+final post = await Api.post('/posts', body: {'title': 'Hello'});
+await Api.put('/posts/1', body: {'title': 'Updated'});
+await Api.delete('/posts/1');
+```
+
+## Module Api Pattern
+
+```dart
+// lib/posts/api.dart
+class PostsApi {
+  static Future<List<Post>> getAll() =>
+    Api.get('/posts').then((data) => Post.fromList(data));
+
+  static Future<Post> getOne(String id) =>
+    Api.get('/posts/$id').then(Post.fromJson);
+
+  static Future<Post> create(Post post) =>
+    Api.post('/posts', body: post.toJson()).then(Post.fromJson);
 }
 ```
 
-## Example API Route
+## DuxtState Mixin (SPA)
 
 ```dart
-import 'package:duxt/server.dart';
+class _PostsState extends State<PostsPage> with DuxtState<List<Post>> {
+  @override
+  Future<List<Post>> load() => PostsApi.getAll();
 
-final handler = defineEventHandler((request) async {
-  switch (request.method) {
-    case 'GET':
-      return ApiResponse.json({'message': 'Hello!'});
-    case 'POST':
-      final body = request.json;
-      return ApiResponse.created(body);
-    default:
-      return ApiResponse.methodNotAllowed();
-  }
-});
+  @override
+  Component buildLoading() => div([text('Loading...')]);
+
+  @override
+  Component buildError(Object e) => div([text('Error: $e')]);
+
+  @override
+  Component buildData(List<Post> posts) => PostList(posts: posts);
+}
 ```
 
 ## Requirements

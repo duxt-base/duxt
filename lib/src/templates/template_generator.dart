@@ -239,7 +239,7 @@ class HomePage extends StatelessComponent {
           text('Welcome to $projectName'),
         ]),
         p(classes: 'text-xl text-gray-600 mb-8', [
-          text('Built with Duxt - The Nuxt-like framework for Jaspr'),
+          text('Built with Duxt - The modern framework for Jaspr'),
         ]),
         div(classes: 'flex justify-center gap-4', [
           a(
@@ -321,7 +321,7 @@ class AboutPage extends StatelessComponent {
       div(classes: 'prose prose-lg', [
         p(classes: 'text-gray-600 mb-4', [
           text(
-            'Duxt is a meta-framework for Jaspr that brings Nuxt-like conventions '
+            'Duxt is a meta-framework for Jaspr that brings modern conventions '
             'to Dart web development.',
           ),
         ]),

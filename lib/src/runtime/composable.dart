@@ -1,4 +1,4 @@
-/// Base for Duxt composables (like Nuxt/Vue composables)
+/// Base for Duxt composables (reactive composables)
 ///
 /// Composables are reusable stateful logic that can be shared across components
 library;
@@ -37,7 +37,7 @@ class UseRouter {
   }
 }
 
-/// Hook for fetching data (like Nuxt's useFetch)
+/// Hook for fetching data (for data fetching)
 class UseFetch<T> {
   final Future<T> Function() fetcher;
   final String? key;
@@ -63,7 +63,7 @@ class UseFetch<T> {
   }
 }
 
-/// Hook for async state (like Nuxt's useAsyncData)
+/// Hook for async state (for async state)
 class UseAsyncData<T> {
   final String key;
   final Future<T> Function() handler;

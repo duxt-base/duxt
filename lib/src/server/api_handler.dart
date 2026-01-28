@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 /// Base class for API route handlers
-/// Similar to Nuxt's server routes
+/// Similar to Rails's server routes
 abstract class ApiHandler {
   /// Handle GET requests
   Future<ApiResponse> get(ApiRequest request) async {
@@ -180,7 +180,7 @@ class ApiResponse {
   }
 }
 
-/// Define an event handler (like Nuxt's defineEventHandler)
+/// Define an event handler (for API routes)
 typedef EventHandler = Future<ApiResponse> Function(ApiRequest request);
 
 /// Create an event handler

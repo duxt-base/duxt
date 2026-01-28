@@ -3,7 +3,7 @@ import 'package:path/path.dart' as p;
 
 /// Manages layout discovery and wrapping
 ///
-/// Conventions (matching Nuxt):
+/// Conventions (standard):
 /// - layouts/default.dart -> Default layout for all pages
 /// - layouts/admin.dart -> Named layout, use with `layout: 'admin'`
 /// - layouts/error.dart -> Error page layout

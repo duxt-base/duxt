@@ -1,4 +1,4 @@
-/// Duxt - A Nuxt-like meta-framework for Jaspr
+/// Duxt - A modern meta-framework for Jaspr
 ///
 /// Provides file-based routing, layouts, middleware, and more.
 ///

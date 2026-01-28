@@ -10,7 +10,7 @@ import 'package:duxt/src/cli/g_command.dart';
 import 'package:duxt/src/cli/start_command.dart';
 import 'package:duxt/src/cli/scaffold_command.dart';
 
-const version = '0.2.0';
+const version = '0.2.1';
 
 void main(List<String> args) async {
   // Handle version flag
@@ -22,7 +22,7 @@ void main(List<String> args) async {
   final runner = CommandRunner<int>(
     'duxt',
     '''
-Duxt v$version - A Nuxt-like meta-framework for Jaspr
+Duxt v$version - A meta-framework for Jaspr
 
 Project:
   create <name>        Create a new Duxt project

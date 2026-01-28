@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-01-28
+
+### Changed
+- Removed third-party trademark references from documentation
+- Updated README with new module-based structure examples
+
 ## [0.2.0] - 2026-01-28
 
 ### Changed
@@ -78,7 +84,7 @@ All notable changes to this project will be documented in this file.
 - **API Handler**
   - `ApiHandler` - Base class for API routes
   - `ApiRequest` / `ApiResponse` - Request/response handling
-  - `defineEventHandler` - Nuxt-style event handler
+  - `defineEventHandler` - event handler
   - Helper functions: `readBody`, `getQuery`, `sendRedirect`, etc.
 
 - **Integrations**

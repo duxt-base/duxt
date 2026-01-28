@@ -1,6 +1,6 @@
 /// Base class for Duxt pages
 ///
-/// Similar to Nuxt's definePageMeta and page components
+/// Similar to Rails's definePageMeta and page components
 abstract class DuxtPage {
   /// The layout to use for this page
   /// Defaults to 'default' if not overridden
@@ -22,7 +22,7 @@ abstract class DuxtPage {
 /// Mixin for pages that need async data loading
 mixin AsyncDataMixin {
   /// Called on server-side to fetch data before rendering
-  /// Similar to Nuxt's asyncData/useFetch
+  /// Similar to Rails's asyncData/useFetch
   Future<void> asyncData(DuxtContext context) async {}
 }
 

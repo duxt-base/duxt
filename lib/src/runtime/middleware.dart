@@ -2,7 +2,7 @@ import 'page.dart';
 
 /// Base class for Duxt middleware
 ///
-/// Similar to Nuxt's route middleware
+/// Similar to Rails's route middleware
 abstract class DuxtMiddleware {
   /// Unique name for this middleware
   String get name;

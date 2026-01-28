@@ -1,6 +1,6 @@
 /// Base class for Duxt layouts
 ///
-/// Similar to Nuxt's layout system
+/// Similar to Rails's layout system
 abstract class DuxtLayout {
   /// The default slot where page content is rendered
   /// In Jaspr, this will be the child component
