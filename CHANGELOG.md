@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.3] - 2026-01-29
+
+### Fixed
+- Updated duxt_ui dependency to ^0.2.3 (fixes unstyled components)
+
 ## [0.3.2] - 2026-01-29
 
 ### Fixed

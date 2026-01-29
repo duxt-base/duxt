@@ -104,7 +104,7 @@ dependencies:
   jaspr: ^0.22.1
   jaspr_router: ^0.8.1
   duxt: ^0.2.8
-  duxt_ui: ^0.2.2
+  duxt_ui: ^0.2.3
   sqlite3: ^2.4.0
   web: ^1.0.0
 
