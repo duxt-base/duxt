@@ -435,29 +435,21 @@ class _ShowcasePageState extends State<ShowcasePage> {
 
           // Cards showcase
           if (_selectedTab == 'cards') ...[
-            _sectionTitle('Card Variants'),
+            _sectionTitle('Basic Cards'),
             DPageGrid(
               columns: DPageGridColumns.two,
               children: [
                 DCard(
-                  variant: DCardVariant.outline,
-                  header: DCardHeader(title: 'Outline Card', description: 'Default card style'),
-                  children: [p([text('Card content goes here')])],
+                  header: DCardHeader(title: 'Card Title', description: 'Card description'),
+                  children: [p([text('Card content goes here. Cards are great for grouping related content.')])],
                 ),
                 DCard(
-                  variant: DCardVariant.solid,
-                  header: DCardHeader(title: 'Solid Card', description: 'Inverted colors'),
-                  children: [p([text('Card content goes here')])],
-                ),
-                DCard(
-                  variant: DCardVariant.soft,
-                  header: DCardHeader(title: 'Soft Card', description: 'Subtle background'),
-                  children: [p([text('Card content goes here')])],
-                ),
-                DCard(
-                  variant: DCardVariant.subtle,
-                  header: DCardHeader(title: 'Subtle Card', description: 'Soft with border'),
-                  children: [p([text('Card content goes here')])],
+                  header: DCardHeader(title: 'Another Card', description: 'With footer'),
+                  children: [p([text('Cards can have headers, content, and footers.')])],
+                  footer: DCardFooter(children: [
+                    DButton(label: 'Cancel', variant: DButtonVariant.ghost),
+                    DButton(label: 'Save'),
+                  ]),
                 ),
               ],
             ),
@@ -520,24 +512,20 @@ class _ShowcasePageState extends State<ShowcasePage> {
               DAlert(
                 title: 'Info',
                 description: 'This is an informational message',
-                variant: DAlertVariant.soft,
               ),
               DAlert(
                 title: 'Success',
                 description: 'Operation completed successfully',
-                variant: DAlertVariant.soft,
                 color: DAlertColor.success,
               ),
               DAlert(
                 title: 'Warning',
                 description: 'Please review before continuing',
-                variant: DAlertVariant.soft,
                 color: DAlertColor.warning,
               ),
               DAlert(
                 title: 'Error',
                 description: 'Something went wrong',
-                variant: DAlertVariant.soft,
                 color: DAlertColor.error,
               ),
             ]),
@@ -552,8 +540,8 @@ class _ShowcasePageState extends State<ShowcasePage> {
             _sectionTitle('Progress'),
             div(classes: 'max-w-md space-y-4', [
               DProgress(value: 25),
-              DProgress(value: 50, color: DProgressColor.success),
-              DProgress(value: 75, color: DProgressColor.warning),
+              DProgress(value: 50, color: DColor.success),
+              DProgress(value: 75, color: DColor.warning),
             ]),
             _sectionTitle('Spinner'),
             div(classes: 'flex gap-4', [
