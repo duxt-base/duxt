@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-01-29
+
+### Added
+- `duxt update` command to update CLI to latest version
+- Automatic update check on CLI startup (non-blocking)
+
+### Fixed
+- Removed compiled binary from package (was causing UTF-8 decode error)
+
 ## [0.3.0] - 2026-01-29
 
 ### Added

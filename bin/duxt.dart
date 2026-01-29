@@ -12,14 +12,20 @@ import 'package:duxt/src/cli/scaffold_command.dart';
 import 'package:duxt/src/cli/delete_command.dart';
 import 'package:duxt/src/cli/info_command.dart';
 import 'package:duxt/src/cli/clean_command.dart';
+import 'package:duxt/src/cli/update_command.dart';
 
-const version = '0.2.3';
+const version = '0.3.1';
 
 void main(List<String> args) async {
   // Handle version flag
   if (args.contains('--version') || args.contains('-v')) {
     print('Duxt v$version');
     exit(0);
+  }
+
+  // Check for updates in background (non-blocking)
+  if (args.isNotEmpty && !args.contains('update')) {
+    checkForUpdates(version);
   }
 
   final runner = CommandRunner<int>(
@@ -29,13 +35,14 @@ Duxt v$version - A meta-framework for Jaspr
 
 Project:
   create <name>        Create a new Duxt project
+  update               Update Duxt CLI to latest version
 
 Development:
-  dev [--port]         Start dev server with hot reload
+  dev [--port]         Start dev server (frontend + API)
   start [--port]       Start production server
 
 Build:
-  build                Build for production
+  build [--target]     Build for production
   generate             Generate static site (SSG)
 
 Generate:
@@ -61,7 +68,8 @@ Run "duxt help <command>" for more information.
     ..addCommand(ScaffoldCommand())
     ..addCommand(DeleteCommand())
     ..addCommand(InfoCommand())
-    ..addCommand(CleanCommand());
+    ..addCommand(CleanCommand())
+    ..addCommand(UpdateCommand());
 
   try {
     final result = await runner.run(args);

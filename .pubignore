@@ -1,0 +1,17 @@
+# Don't publish compiled binaries
+bin/duxt
+
+# Development files
+.dart_tool/
+.packages
+pubspec.lock
+*.g.dart
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Test
+coverage/
+.test_coverage/
