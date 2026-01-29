@@ -1,110 +1,186 @@
-/// Base for Duxt composables (reactive composables)
+/// Duxt composables - utilities for working with Jaspr router and state
 ///
-/// Composables are reusable stateful logic that can be shared across components
+/// These are thin wrappers around Jaspr router APIs for convenience.
 library;
 
-/// Hook for accessing the current route
-class UseRoute {
-  final String path;
-  final Map<String, String> params;
-  final Map<String, String> query;
-  final String? hash;
+import 'package:jaspr/jaspr.dart';
+import 'package:jaspr_router/jaspr_router.dart';
 
-  UseRoute({
-    required this.path,
-    required this.params,
-    required this.query,
-    this.hash,
-  });
+/// Get the router state from context.
+///
+/// Usage:
+/// ```dart
+/// final router = useRouter(context);
+/// router.push('/posts');
+/// ```
+RouterState useRouter(BuildContext context) => Router.of(context);
+
+/// Get route state from the builder callback.
+///
+/// This is just a type alias reminder - RouteState comes from the route builder.
+/// Usage in route builder:
+/// ```dart
+/// Route(
+///   path: '/posts/:id',
+///   builder: (context, state) {
+///     final id = state.params['id'];
+///     final filter = state.queryParams['filter'];
+///     return PostPage(id: id!);
+///   },
+/// )
+/// ```
+typedef RouteStateCallback = Component Function(BuildContext context, RouteState state);
+
+/// Extension on BuildContext for convenient navigation.
+///
+/// Usage:
+/// ```dart
+/// // Navigate to a path
+/// context.push('/posts');
+///
+/// // Navigate with extra data
+/// context.push('/posts/1', extra: {'from': 'list'});
+///
+/// // Replace current route
+/// context.replace('/login');
+///
+/// // Go back
+/// context.back();
+///
+/// // Navigate by route name
+/// context.pushNamed('post-detail', params: {'id': '123'});
+/// ```
+extension DuxtNavigation on BuildContext {
+  /// Navigate to a path, adding to browser history.
+  void push(String path, {Object? extra}) => Router.of(this).push(path, extra: extra);
+
+  /// Navigate without adding to browser history.
+  void replace(String path) => Router.of(this).replace(path);
+
+  /// Go back in browser history.
+  void back() => Router.of(this).back();
+
+  /// Navigate using a named route.
+  void pushNamed(String name, {Map<String, String>? params}) =>
+      Router.of(this).pushNamed(name, params: params ?? {});
+
+  /// Replace using a named route.
+  void replaceNamed(String name, {Map<String, String>? params}) =>
+      Router.of(this).replaceNamed(name, params: params ?? {});
+
+  /// Preload a route for faster navigation.
+  void preload(String path) => Router.of(this).preload(path);
+
+  /// Get the location for a named route.
+  String namedLocation(String name) => Router.of(this).namedLocation(name);
 }
 
-/// Hook for navigation
-class UseRouter {
-  void push(String path) {
-    // Will be implemented with Jaspr router
+/// Async data result holder.
+///
+/// Usage with DuxtState is preferred, but this can be used standalone:
+/// ```dart
+/// class _MyState extends State<MyPage> {
+///   final _posts = AsyncData<List<Post>>();
+///
+///   @override
+///   void initState() {
+///     super.initState();
+///     _loadPosts();
+///   }
+///
+///   Future<void> _loadPosts() async {
+///     _posts.setLoading();
+///     setState(() {});
+///     try {
+///       _posts.setData(await PostsApi.getAll());
+///     } catch (e) {
+///       _posts.setError(e);
+///     }
+///     setState(() {});
+///   }
+/// }
+/// ```
+class AsyncData<T> {
+  T? _data;
+  Object? _error;
+  bool _loading = false;
+
+  /// Current data value.
+  T? get data => _data;
+
+  /// Current error if any.
+  Object? get error => _error;
+
+  /// Whether currently loading.
+  bool get loading => _loading;
+
+  /// Whether data has loaded successfully.
+  bool get hasData => _data != null && _error == null;
+
+  /// Whether an error occurred.
+  bool get hasError => _error != null;
+
+  /// Set loading state.
+  void setLoading() {
+    _loading = true;
+    _error = null;
   }
 
-  void replace(String path) {
-    // Will be implemented with Jaspr router
+  /// Set data and clear loading/error.
+  void setData(T value) {
+    _data = value;
+    _error = null;
+    _loading = false;
   }
 
-  void back() {
-    // Will be implemented with Jaspr router
+  /// Set error and clear loading.
+  void setError(Object e) {
+    _error = e;
+    _loading = false;
   }
 
-  void forward() {
-    // Will be implemented with Jaspr router
+  /// Reset to initial state.
+  void reset() {
+    _data = null;
+    _error = null;
+    _loading = false;
   }
 }
 
-/// Hook for fetching data (for data fetching)
-class UseFetch<T> {
-  final Future<T> Function() fetcher;
-  final String? key;
-
-  T? data;
-  Object? error;
-  bool pending = true;
-  bool refresh = false;
-
-  UseFetch(this.fetcher, {this.key});
-
-  Future<void> execute() async {
-    pending = true;
-    error = null;
-
-    try {
-      data = await fetcher();
-    } catch (e) {
-      error = e;
-    } finally {
-      pending = false;
-    }
+/// Helper to extract route params in component constructors.
+///
+/// Usage:
+/// ```dart
+/// class PostPage extends StatelessComponent {
+///   final String id;
+///   const PostPage({required this.id, super.key});
+/// }
+///
+/// // In route builder:
+/// Route(
+///   path: '/posts/:id',
+///   builder: (context, state) => PostPage(id: state.params['id']!),
+/// )
+/// ```
+String requireParam(RouteState state, String name) {
+  final value = state.params[name];
+  if (value == null) {
+    throw ArgumentError('Missing required route param: $name');
   }
+  return value;
 }
 
-/// Hook for async state (for async state)
-class UseAsyncData<T> {
-  final String key;
-  final Future<T> Function() handler;
-
-  T? data;
-  Object? error;
-  bool pending = true;
-
-  UseAsyncData(this.key, this.handler);
-
-  Future<void> execute() async {
-    pending = true;
-    error = null;
-
-    try {
-      data = await handler();
-    } catch (e) {
-      error = e;
-    } finally {
-      pending = false;
-    }
-  }
+/// Helper to get optional route param with default.
+String paramOr(RouteState state, String name, String defaultValue) {
+  return state.params[name] ?? defaultValue;
 }
 
-/// Hook for reactive state
-class UseState<T> {
-  T _value;
-  final List<void Function(T)> _listeners = [];
+/// Helper to get query param.
+String? queryParam(RouteState state, String name) {
+  return state.queryParams[name];
+}
 
-  UseState(this._value);
-
-  T get value => _value;
-
-  set value(T newValue) {
-    _value = newValue;
-    for (final listener in _listeners) {
-      listener(newValue);
-    }
-  }
-
-  void listen(void Function(T) listener) {
-    _listeners.add(listener);
-  }
+/// Helper to get query param with default.
+String queryParamOr(RouteState state, String name, String defaultValue) {
+  return state.queryParams[name] ?? defaultValue;
 }
