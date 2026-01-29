@@ -300,14 +300,6 @@ class HomePage extends StatelessComponent {
     await File(p.join(targetDir, 'lib', 'home', 'pages', 'index.dart')).writeAsString(pageContent);
 
     // Keep empty components folder with a placeholder
-    final componentContent = r'''
-// Add your home module components here
-// Example:
-// import 'package:jaspr/jaspr.dart';
-// import 'package:duxt_ui/duxt_ui.dart';
-//
-// class MyComponent extends StatelessComponent { ... }
-''';
     await File(p.join(targetDir, 'lib', 'home', 'components', '.gitkeep')).writeAsString('');
   }
 
