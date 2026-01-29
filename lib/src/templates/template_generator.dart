@@ -28,6 +28,9 @@ class TemplateGenerator {
     // About module
     await _createAboutModule(targetDir);
 
+    // Showcase module (duxt_ui components)
+    await _createShowcaseModule(targetDir);
+
     // Web files
     await _createTailwindStyles(targetDir);
     await _createIndexHtml(dartName, targetDir);
@@ -38,12 +41,16 @@ class TemplateGenerator {
     print('  lib/');
     print('    ├── home/');
     print('    │   ├── pages/index.dart');
-    print('    │   └── components/welcome_card.dart');
+    print('    │   └── components/');
     print('    ├── about/');
+    print('    │   └── pages/index.dart');
+    print('    ├── showcase/');
     print('    │   └── pages/index.dart');
     print('    ├── shared/');
     print('    │   └── layouts/default.dart');
     print('    └── app.dart');
+    print('');
+    print('  \x1B[36mℹ\x1B[0m  Using duxt_ui components');
   }
 
   static Future<void> _createDirectories(String targetDir) async {
@@ -52,6 +59,7 @@ class TemplateGenerator {
       'lib/home/pages',
       'lib/home/components',
       'lib/about/pages',
+      'lib/showcase/pages',
       'lib/shared/components',
       'lib/shared/layouts',
       'server/api',
@@ -78,6 +86,8 @@ dependencies:
   jaspr_router: ^0.8.1
   duxt:
     path: /Volumes/External/duxt
+  duxt_ui:
+    path: /Volumes/External/duxt_ui
 
 dev_dependencies:
   build_runner: ^2.4.0
@@ -139,6 +149,7 @@ import 'package:jaspr_router/jaspr_router.dart';
 // Modules
 import 'home/pages/index.dart';
 import 'about/pages/index.dart';
+import 'showcase/pages/index.dart';
 
 // Shared
 import 'shared/layouts/default.dart';
@@ -164,6 +175,12 @@ class App extends StatelessComponent {
             title: 'About',
             builder: (context, state) => const AboutPage(),
           ),
+          // Showcase module
+          Route(
+            path: '/showcase',
+            title: 'Showcase',
+            builder: (context, state) => const ShowcasePage(),
+          ),
         ],
       ),
     ]);
@@ -177,7 +194,7 @@ class App extends StatelessComponent {
     final content = r'''
 import 'package:jaspr/jaspr.dart';
 import 'package:jaspr/dom.dart';
-import 'package:jaspr_router/jaspr_router.dart';
+import 'package:duxt_ui/duxt_ui.dart';
 
 class DefaultLayout extends StatelessComponent {
   final Component child;
@@ -186,36 +203,28 @@ class DefaultLayout extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return div(classes: 'min-h-screen bg-gray-50 flex flex-col', [
-      // Navigation
-      nav(classes: 'bg-white shadow-sm', [
-        div(classes: 'max-w-7xl mx-auto px-4 py-4 flex justify-between items-center', [
-          Link(
-            to: '/',
-            child: span(classes: 'text-xl font-bold text-indigo-600', [text('Duxt')]),
-          ),
-          div(classes: 'flex gap-6', [
-            Link(
-              to: '/',
-              child: span(classes: 'text-gray-600 hover:text-indigo-600', [text('Home')]),
-            ),
-            Link(
-              to: '/about',
-              child: span(classes: 'text-gray-600 hover:text-indigo-600', [text('About')]),
-            ),
-          ]),
-        ]),
-      ]),
+    return div(classes: 'min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col', [
+      // Header with navigation
+      DHeader(
+        left: DLink(
+          to: '/',
+          variant: DLinkVariant.primary,
+          child: span(classes: 'text-xl font-bold', [text('Duxt')]),
+        ),
+        right: DNavigationMenu(
+          items: [
+            DNavigationMenuItem(label: 'Home', to: '/'),
+            DNavigationMenuItem(label: 'Showcase', to: '/showcase'),
+            DNavigationMenuItem(label: 'About', to: '/about'),
+          ],
+        ),
+      ),
       // Main content
-      main_(classes: 'flex-1 max-w-7xl mx-auto px-4 py-8 w-full', [
-        child,
-      ]),
+      DMain(children: [child]),
       // Footer
-      footer(classes: 'bg-white border-t mt-auto', [
-        div(classes: 'max-w-7xl mx-auto px-4 py-6 text-center text-gray-500', [
-          text('Built with Duxt'),
-        ]),
-      ]),
+      DFooter(
+        center: DCopyright(text: 'Built with Duxt'),
+      ),
     ]);
   }
 }
@@ -224,128 +233,359 @@ class DefaultLayout extends StatelessComponent {
   }
 
   static Future<void> _createHomeModule(String projectName, String targetDir) async {
-    // Home page
+    // Home page using duxt_ui components
     final pageContent = '''
 import 'package:jaspr/jaspr.dart';
 import 'package:jaspr/dom.dart';
-import '../components/welcome_card.dart';
+import 'package:duxt_ui/duxt_ui.dart';
 
 class HomePage extends StatelessComponent {
   const HomePage({super.key});
 
   @override
   Component build(BuildContext context) {
-    return div(classes: 'space-y-12', [
-      // Hero
-      div(classes: 'text-center py-16', [
-        h1(classes: 'text-5xl font-bold text-gray-900 mb-4', [
-          text('Welcome to $projectName'),
-        ]),
-        p(classes: 'text-xl text-gray-600 mb-8', [
-          text('Built with Duxt - The modern framework for Jaspr'),
-        ]),
-        div(classes: 'flex justify-center gap-4', [
-          a(
-            href: 'https://github.com/base-al/duxt',
-            classes: 'px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700',
-            [text('Get Started')],
+    return DPage([
+      // Hero section
+      DPageHero(
+        headline: 'Welcome to Duxt',
+        title: '$projectName',
+        description: 'Built with Duxt - The modern framework for Jaspr',
+        gradient: true,
+        links: [
+          DButton(
+            label: 'Get Started',
+            color: DButtonColor.primary,
+            size: DButtonSize.lg,
+            onClick: () {},
           ),
-        ]),
-      ]),
-      // Features
-      div(classes: 'grid grid-cols-1 md:grid-cols-3 gap-6', [
-        WelcomeCard(
-          title: 'Module-Based',
-          description: 'Organize code by feature with pages, components, and api per module',
-          icon: '📦',
-        ),
-        WelcomeCard(
-          title: 'Simple API',
-          description: 'Static Api class for clean HTTP calls',
-          icon: '🔌',
-        ),
-        WelcomeCard(
-          title: 'Opinionated',
-          description: 'Conventions over configuration',
-          icon: '🛤️',
-        ),
-      ]),
+          DButton(
+            label: 'Documentation',
+            variant: DButtonVariant.outline,
+            color: DButtonColor.neutral,
+            size: DButtonSize.lg,
+            onClick: () {},
+          ),
+        ],
+      ),
+      // Features section
+      DPageSection(
+        headline: 'Features',
+        title: 'Everything you need',
+        description: 'Duxt provides all the tools to build modern web apps with Dart',
+      ),
+      DPageGrid(
+        columns: DPageGridColumns.three,
+        children: [
+          DPageCard(
+            icon: DIcon(icon: 'i-heroicons-cube'),
+            title: 'Module-Based',
+            description: 'Organize code by feature with pages, components, and api per module',
+          ),
+          DPageCard(
+            icon: DIcon(icon: 'i-heroicons-bolt'),
+            title: 'Simple API',
+            description: 'Static Api class for clean HTTP calls',
+          ),
+          DPageCard(
+            icon: DIcon(icon: 'i-heroicons-cog-6-tooth'),
+            title: 'Opinionated',
+            description: 'Conventions over configuration for rapid development',
+          ),
+        ],
+      ),
     ]);
   }
 }
 ''';
     await File(p.join(targetDir, 'lib', 'home', 'pages', 'index.dart')).writeAsString(pageContent);
 
-    // Welcome card component
+    // Keep empty components folder with a placeholder
     final componentContent = r'''
-import 'package:jaspr/jaspr.dart';
-import 'package:jaspr/dom.dart';
-
-class WelcomeCard extends StatelessComponent {
-  final String title;
-  final String description;
-  final String icon;
-
-  const WelcomeCard({
-    super.key,
-    required this.title,
-    required this.description,
-    this.icon = '✨',
-  });
-
-  @override
-  Component build(BuildContext context) {
-    return div(
-      classes: 'p-6 bg-white rounded-xl shadow-sm border hover:shadow-md transition-shadow',
-      [
-        div(classes: 'text-4xl mb-4', [text(icon)]),
-        h3(classes: 'text-xl font-semibold text-gray-900 mb-2', [text(title)]),
-        p(classes: 'text-gray-600', [text(description)]),
-      ],
-    );
-  }
-}
+// Add your home module components here
+// Example:
+// import 'package:jaspr/jaspr.dart';
+// import 'package:duxt_ui/duxt_ui.dart';
+//
+// class MyComponent extends StatelessComponent { ... }
 ''';
-    await File(p.join(targetDir, 'lib', 'home', 'components', 'welcome_card.dart')).writeAsString(componentContent);
+    await File(p.join(targetDir, 'lib', 'home', 'components', '.gitkeep')).writeAsString('');
   }
 
   static Future<void> _createAboutModule(String targetDir) async {
     final content = r'''
 import 'package:jaspr/jaspr.dart';
 import 'package:jaspr/dom.dart';
+import 'package:duxt_ui/duxt_ui.dart';
 
 class AboutPage extends StatelessComponent {
   const AboutPage({super.key});
 
   @override
   Component build(BuildContext context) {
-    return div(classes: 'max-w-3xl mx-auto', [
-      h1(classes: 'text-4xl font-bold text-gray-900 mb-6', [
-        text('About'),
-      ]),
-      div(classes: 'prose prose-lg', [
-        p(classes: 'text-gray-600 mb-4', [
+    return DPage([
+      DPageHeader(
+        title: 'About',
+        description: 'Learn more about this project',
+      ),
+      DContainer([
+        p(classes: 'text-lg text-gray-600 dark:text-gray-400 mb-8', [
           text(
             'Duxt is a meta-framework for Jaspr that brings modern conventions '
             'to Dart web development.',
           ),
         ]),
-        h2(classes: 'text-2xl font-semibold text-gray-900 mt-8 mb-4', [
-          text('Features'),
-        ]),
-        ul(classes: 'list-disc list-inside space-y-2 text-gray-600', [
-          li([text('Module-based architecture')]),
-          li([text('Simple static Api class')]),
-          li([text('DuxtState mixin for SPA data loading')]),
-          li([text('Convention over configuration')]),
-          li([text('Tailwind CSS integration')]),
-        ]),
       ]),
+      DPageSection(
+        title: 'Features',
+        description: 'What makes Duxt special',
+      ),
+      DPageGrid(
+        columns: DPageGridColumns.two,
+        children: [
+          DPageCard(
+            icon: DIcon(icon: 'i-heroicons-cube'),
+            title: 'Module-based architecture',
+            description: 'Organize your code by features for better maintainability',
+          ),
+          DPageCard(
+            icon: DIcon(icon: 'i-heroicons-server'),
+            title: 'Simple API client',
+            description: 'Static Api class for clean HTTP calls',
+          ),
+          DPageCard(
+            icon: DIcon(icon: 'i-heroicons-arrow-path'),
+            title: 'DuxtState mixin',
+            description: 'Easy SPA data loading patterns',
+          ),
+          DPageCard(
+            icon: DIcon(icon: 'i-heroicons-paint-brush'),
+            title: 'Tailwind CSS',
+            description: 'Built-in Tailwind integration for styling',
+          ),
+        ],
+      ),
     ]);
   }
 }
 ''';
     await File(p.join(targetDir, 'lib', 'about', 'pages', 'index.dart')).writeAsString(content);
+  }
+
+  static Future<void> _createShowcaseModule(String targetDir) async {
+    final content = r'''
+import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
+import 'package:duxt_ui/duxt_ui.dart';
+
+class ShowcasePage extends StatefulComponent {
+  const ShowcasePage({super.key});
+
+  @override
+  State<ShowcasePage> createState() => _ShowcasePageState();
+}
+
+class _ShowcasePageState extends State<ShowcasePage> {
+  bool _loading = false;
+  String _selectedTab = 'buttons';
+
+  @override
+  Component build(BuildContext context) {
+    return DPage([
+      DPageHeader(
+        headline: 'Duxt UI',
+        title: 'Component Showcase',
+        description: 'Explore the beautiful components available in duxt_ui',
+      ),
+      DContainer([
+        // Tabs for different component categories
+        DTabs(
+          items: [
+            DTabItem(value: 'buttons', label: 'Buttons'),
+            DTabItem(value: 'cards', label: 'Cards'),
+            DTabItem(value: 'inputs', label: 'Inputs'),
+            DTabItem(value: 'feedback', label: 'Feedback'),
+          ],
+          value: _selectedTab,
+          onChanged: (value) => setState(() => _selectedTab = value),
+        ),
+
+        div(classes: 'mt-8', [
+          // Buttons showcase
+          if (_selectedTab == 'buttons') ...[
+            _sectionTitle('Button Variants'),
+            div(classes: 'flex flex-wrap gap-4 mb-8', [
+              DButton(label: 'Solid', variant: DButtonVariant.solid),
+              DButton(label: 'Outline', variant: DButtonVariant.outline),
+              DButton(label: 'Soft', variant: DButtonVariant.soft),
+              DButton(label: 'Ghost', variant: DButtonVariant.ghost),
+              DButton(label: 'Link', variant: DButtonVariant.link),
+            ]),
+            _sectionTitle('Button Colors'),
+            div(classes: 'flex flex-wrap gap-4 mb-8', [
+              DButton(label: 'Primary', color: DButtonColor.primary),
+              DButton(label: 'Secondary', color: DButtonColor.secondary),
+              DButton(label: 'Success', color: DButtonColor.success),
+              DButton(label: 'Warning', color: DButtonColor.warning),
+              DButton(label: 'Error', color: DButtonColor.error),
+              DButton(label: 'Neutral', color: DButtonColor.neutral),
+            ]),
+            _sectionTitle('Button Sizes'),
+            div(classes: 'flex flex-wrap items-center gap-4 mb-8', [
+              DButton(label: 'XS', size: DButtonSize.xs),
+              DButton(label: 'SM', size: DButtonSize.sm),
+              DButton(label: 'MD', size: DButtonSize.md),
+              DButton(label: 'LG', size: DButtonSize.lg),
+              DButton(label: 'XL', size: DButtonSize.xl),
+            ]),
+            _sectionTitle('Loading State'),
+            div(classes: 'flex flex-wrap gap-4', [
+              DButton(label: 'Loading...', loading: true),
+              DButton(label: 'Disabled', disabled: true),
+            ]),
+          ],
+
+          // Cards showcase
+          if (_selectedTab == 'cards') ...[
+            _sectionTitle('Card Variants'),
+            DPageGrid(
+              columns: DPageGridColumns.two,
+              children: [
+                DCard(
+                  variant: DCardVariant.outline,
+                  header: DCardHeader(title: 'Outline Card', description: 'Default card style'),
+                  children: [p([text('Card content goes here')])],
+                ),
+                DCard(
+                  variant: DCardVariant.solid,
+                  header: DCardHeader(title: 'Solid Card', description: 'Inverted colors'),
+                  children: [p([text('Card content goes here')])],
+                ),
+                DCard(
+                  variant: DCardVariant.soft,
+                  header: DCardHeader(title: 'Soft Card', description: 'Subtle background'),
+                  children: [p([text('Card content goes here')])],
+                ),
+                DCard(
+                  variant: DCardVariant.subtle,
+                  header: DCardHeader(title: 'Subtle Card', description: 'Soft with border'),
+                  children: [p([text('Card content goes here')])],
+                ),
+              ],
+            ),
+            div(classes: 'h-8', []),
+            _sectionTitle('Page Cards'),
+            DPageGrid(
+              columns: DPageGridColumns.three,
+              children: [
+                DPageCard(
+                  icon: DIcon(icon: 'i-heroicons-rocket-launch'),
+                  title: 'Getting Started',
+                  description: 'Learn how to get up and running quickly',
+                  to: '/about',
+                ),
+                DPageCard(
+                  icon: DIcon(icon: 'i-heroicons-book-open'),
+                  title: 'Documentation',
+                  description: 'Read the full documentation',
+                ),
+                DPageCard(
+                  icon: DIcon(icon: 'i-heroicons-code-bracket'),
+                  title: 'Examples',
+                  description: 'Browse example projects',
+                ),
+              ],
+            ),
+          ],
+
+          // Inputs showcase
+          if (_selectedTab == 'inputs') ...[
+            _sectionTitle('Text Inputs'),
+            div(classes: 'space-y-4 max-w-md mb-8', [
+              DInput(placeholder: 'Default input'),
+              DInput(placeholder: 'Disabled', disabled: true),
+              DInput(placeholder: 'With label', label: 'Email'),
+            ]),
+            _sectionTitle('Checkboxes & Switches'),
+            div(classes: 'space-y-4 mb-8', [
+              DCheckbox(label: 'Accept terms and conditions'),
+              DCheckbox(label: 'Checked by default', defaultChecked: true),
+              DSwitch(label: 'Enable notifications'),
+            ]),
+            _sectionTitle('Select'),
+            div(classes: 'max-w-md', [
+              DSelect(
+                placeholder: 'Choose an option',
+                options: [
+                  DSelectOption(value: 'opt1', label: 'Option 1'),
+                  DSelectOption(value: 'opt2', label: 'Option 2'),
+                  DSelectOption(value: 'opt3', label: 'Option 3'),
+                ],
+              ),
+            ]),
+          ],
+
+          // Feedback showcase
+          if (_selectedTab == 'feedback') ...[
+            _sectionTitle('Alerts'),
+            div(classes: 'space-y-4 mb-8', [
+              DAlert(
+                title: 'Info',
+                description: 'This is an informational message',
+                variant: DAlertVariant.soft,
+              ),
+              DAlert(
+                title: 'Success',
+                description: 'Operation completed successfully',
+                variant: DAlertVariant.soft,
+                color: DAlertColor.success,
+              ),
+              DAlert(
+                title: 'Warning',
+                description: 'Please review before continuing',
+                variant: DAlertVariant.soft,
+                color: DAlertColor.warning,
+              ),
+              DAlert(
+                title: 'Error',
+                description: 'Something went wrong',
+                variant: DAlertVariant.soft,
+                color: DAlertColor.error,
+              ),
+            ]),
+            _sectionTitle('Badges'),
+            div(classes: 'flex flex-wrap gap-4 mb-8', [
+              DBadge(label: 'Default'),
+              DBadge(label: 'Primary', color: DBadgeColor.primary),
+              DBadge(label: 'Success', color: DBadgeColor.success),
+              DBadge(label: 'Warning', color: DBadgeColor.warning),
+              DBadge(label: 'Error', color: DBadgeColor.error),
+            ]),
+            _sectionTitle('Progress'),
+            div(classes: 'max-w-md space-y-4', [
+              DProgress(value: 25),
+              DProgress(value: 50, color: DProgressColor.success),
+              DProgress(value: 75, color: DProgressColor.warning),
+            ]),
+            _sectionTitle('Spinner'),
+            div(classes: 'flex gap-4', [
+              DSpinner(size: DSpinnerSize.sm),
+              DSpinner(size: DSpinnerSize.md),
+              DSpinner(size: DSpinnerSize.lg),
+            ]),
+          ],
+        ]),
+      ]),
+    ]);
+  }
+
+  Component _sectionTitle(String title) {
+    return h3(classes: 'text-lg font-semibold text-gray-900 dark:text-white mb-4', [
+      text(title),
+    ]);
+  }
+}
+''';
+    await File(p.join(targetDir, 'lib', 'showcase', 'pages', 'index.dart')).writeAsString(content);
   }
 
   static Future<void> _createTailwindStyles(String targetDir) async {
