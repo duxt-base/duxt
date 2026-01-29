@@ -1,7 +1,7 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/base-al/duxt/main/web/logo.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/base-al/duxt/main/web/logo.svg">
-  <img alt="Duxt" src="https://raw.githubusercontent.com/base-al/duxt/main/web/logo.svg" width="180">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/duxt-base/duxt/main/web/logo.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/duxt-base/duxt/main/web/logo.svg">
+  <img alt="Duxt" src="https://raw.githubusercontent.com/duxt-base/duxt/main/web/logo.svg" width="180">
 </picture>
 
 # Duxt
@@ -404,7 +404,7 @@ print(content.toc);
 
 ## 🎨 Using with Duxt UI
 
-Duxt works seamlessly with [Duxt UI](https://github.com/base-al/duxt-ui) for beautiful, pre-built components:
+Duxt works seamlessly with [Duxt UI](https://github.com/duxt-base/duxt-ui) for beautiful, pre-built components:
 
 ```yaml
 dependencies:
@@ -466,5 +466,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  <sub>Built with 💙 by the <a href="https://github.com/base-al">Base.al</a> team</sub>
+  <sub>Built by the <a href="https://duxt.dev">duxt.dev</a> team</sub>
 </p>

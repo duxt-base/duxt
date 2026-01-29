@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3] - 2026-01-29
+
+### Changed
+- Rewrite composables to use actual Jaspr router APIs
+- `useRouter(context)` returns `RouterState` from jaspr_router
+- Added `DuxtNavigation` extension on `BuildContext` for `context.push()`, `context.back()`, etc.
+- Added `AsyncData<T>` class for standalone async state management
+- Added route param helpers: `requireParam`, `paramOr`, `queryParam`, `queryParamOr`
+- Removed placeholder `UseFetch`, `UseAsyncData`, `UseState`, `UseRoute`, `UseRouter` classes
+- Updated URLs to duxt.dev and duxt-base/duxt
+
 ## [0.2.2] - 2026-01-28
 
 ### Changed
