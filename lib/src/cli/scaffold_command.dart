@@ -243,6 +243,7 @@ class ${className}Api {
 
     final content = '''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 import 'package:duxt/duxt.dart';
 import '../model.dart';
 import '../api.dart';
@@ -255,7 +256,7 @@ class ${pluralClass}ListPage extends StatefulComponent {
   State createState() => _${pluralClass}ListPageState();
 }
 
-class _${pluralClass}ListPageState extends State<${pluralClass}ListPage> with DuxtState<List<$className>> {
+class _${pluralClass}ListPageState extends DuxtState<${pluralClass}ListPage, List<$className>> {
   @override
   Future<List<$className>> load() => ${className}Api.getAll();
 
@@ -315,6 +316,7 @@ class _${pluralClass}ListPageState extends State<${pluralClass}ListPage> with Du
 
     final content = '''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 import 'package:duxt/duxt.dart';
 import '../model.dart';
 import '../api.dart';
@@ -328,7 +330,7 @@ class ${pluralClass}DetailPage extends StatefulComponent {
   State createState() => _${pluralClass}DetailPageState();
 }
 
-class _${pluralClass}DetailPageState extends State<${pluralClass}DetailPage> with DuxtState<$className> {
+class _${pluralClass}DetailPageState extends DuxtState<${pluralClass}DetailPage, $className> {
   @override
   Future<$className> load() => ${className}Api.getOne(component.id);
 
@@ -379,6 +381,7 @@ $fieldDisplays
 
     final content = '''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 import '../components/${singular}_form.dart';
 
 class ${pluralClass}NewPage extends StatelessComponent {
@@ -412,6 +415,7 @@ class ${pluralClass}NewPage extends StatelessComponent {
 
     final content = '''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 import '../model.dart';
 
 class ${className}Card extends StatelessComponent {
@@ -447,13 +451,14 @@ class ${className}Card extends StatelessComponent {
           ]),
           input(
             type: InputType.text,
+            name: '${f.name}',
             classes: 'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500',
-            [],
           ),
         ]),''').join('\n');
 
     final content = '''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 
 class ${className}Form extends StatelessComponent {
   const ${className}Form({super.key});

@@ -1,10 +1,17 @@
 import 'package:jaspr/jaspr.dart';
 
-/// Mixin for StatefulComponent that handles async data loading in SPA mode.
+/// Base class for StatefulComponent states that handle async data loading in SPA mode.
 ///
 /// Usage:
 /// ```dart
-/// class _PostsState extends State<PostsPage> with DuxtState<List<Post>> {
+/// class PostsListPage extends StatefulComponent {
+///   const PostsListPage({super.key});
+///
+///   @override
+///   State createState() => _PostsListPageState();
+/// }
+///
+/// class _PostsListPageState extends DuxtState<PostsListPage, List<Post>> {
 ///   @override
 ///   Future<List<Post>> load() => PostsApi.getAll();
 ///
@@ -18,7 +25,7 @@ import 'package:jaspr/jaspr.dart';
 ///   Component buildData(List<Post> posts) => PostList(posts: posts);
 /// }
 /// ```
-mixin DuxtState<T> on State {
+abstract class DuxtState<S extends StatefulComponent, T> extends State<S> {
   T? _data;
   Object? _error;
   bool _loading = true;
@@ -78,11 +85,11 @@ mixin DuxtState<T> on State {
   }
 }
 
-/// Mixin for multiple data sources in SPA mode.
+/// Base class for multiple data sources in SPA mode.
 ///
 /// Usage:
 /// ```dart
-/// class _DashboardState extends State<DashboardPage> with DuxtMultiState {
+/// class _DashboardState extends DuxtMultiState<DashboardPage> {
 ///   @override
 ///   Map<String, Future<dynamic> Function()> get loaders => {
 ///     'posts': PostsApi.getAll,
@@ -103,7 +110,7 @@ mixin DuxtState<T> on State {
 ///   }
 /// }
 /// ```
-mixin DuxtMultiState on State {
+abstract class DuxtMultiState<S extends StatefulComponent> extends State<S> {
   final Map<String, dynamic> _data = {};
   Object? _error;
   bool _loading = true;

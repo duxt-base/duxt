@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 /// Base class for API route handlers
-/// Similar to Rails's server routes
+/// Handles HTTP methods for server-side API routes
 abstract class ApiHandler {
   /// Handle GET requests
   Future<ApiResponse> get(ApiRequest request) async {

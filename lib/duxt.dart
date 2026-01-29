@@ -11,6 +11,11 @@
 /// ```dart
 /// import 'package:duxt/server.dart';
 /// ```
+///
+/// For content/documentation support:
+/// ```dart
+/// import 'package:duxt/content.dart';
+/// ```
 library duxt;
 
 // Runtime exports - for use in Duxt projects
@@ -21,6 +26,4 @@ export 'src/runtime/composable.dart';
 export 'src/runtime/api.dart';
 export 'src/runtime/duxt_state.dart';
 
-// Core exports for code generation
-export 'src/core/router_generator.dart' show RouteInfo;
-export 'src/core/layout_system.dart' show LayoutSystem;
+// Content exports are available via 'package:duxt/content.dart'

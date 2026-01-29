@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2026-01-28
+
+### Changed
+- Fixed `DuxtState` - changed from mixin to abstract class for better generics support
+- Fixed form templates to use proper jaspr `input()` and `button()` API
+- Added `jaspr/dom.dart` import to all generated files for HTML elements
+- Removed all third-party trademark references
+- Updated GitHub URLs to base-al/duxt
+
+### Fixed
+- `input()` now uses `type: InputType.text` and `name:` parameters correctly
+- `button()` now uses `type: ButtonType.submit` correctly
+- Build errors from incorrect jaspr imports
+
 ## [0.2.1] - 2026-01-28
 
 ### Changed
@@ -11,7 +25,7 @@ All notable changes to this project will be documented in this file.
 ## [0.2.0] - 2026-01-28
 
 ### Changed
-- **Module-based architecture** - Opinionated Rails-like structure
+- **Module-based architecture** - Opinionated structure
   ```
   lib/
   ├── posts/           # Module
@@ -63,7 +77,7 @@ All notable changes to this project will be documented in this file.
   - `duxt generate` - Generate static site
   - `duxt g` - Generate files with fields (model, page, component, api, middleware, composable)
   - `duxt add` - Add files without fields
-  - `duxt scaffold` - Rails-like full CRUD generation
+  - `duxt scaffold` - Full CRUD generation
 
 - **Project Structure**
   - File-based routing from `lib/pages/`

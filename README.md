@@ -1,6 +1,6 @@
 # Duxt
 
-A meta-framework for [Jaspr](https://jaspr.dev) with module-based architecture, file-based routing, and Rails-like scaffolding.
+A meta-framework for [Jaspr](https://jaspr.dev) with module-based architecture, file-based routing, and scaffold generators.
 
 ## Features
 
@@ -8,7 +8,7 @@ A meta-framework for [Jaspr](https://jaspr.dev) with module-based architecture, 
 - **File-Based Routing** - Pages auto-generate routes
 - **Simple API Client** - Static `Api` class for HTTP calls
 - **SPA State Management** - `DuxtState` mixin for loading/error handling
-- **Scaffold Generator** - Rails-like CRUD generation
+- **Scaffold Generator** - Full CRUD generation
 - **Tailwind CSS** - Built-in integration
 
 ## Installation
@@ -111,10 +111,10 @@ class PostsApi {
 }
 ```
 
-## DuxtState Mixin (SPA)
+## DuxtState (SPA)
 
 ```dart
-class _PostsState extends State<PostsPage> with DuxtState<List<Post>> {
+class _PostsState extends DuxtState<PostsPage, List<Post>> {
   @override
   Future<List<Post>> load() => PostsApi.getAll();
 

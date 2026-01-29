@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
-/// Generate command - Rails-style short generator
+/// Generate command - Short generator for modules, pages, components
 /// Usage: duxt g <type> <module>/<name> [field:type ...]
 ///
 /// Examples:
@@ -157,6 +157,7 @@ class GCommand extends Command<int> {
     final className = _toPascalCase(moduleName);
     final pageContent = '''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 
 class ${className}Page extends StatelessComponent {
   const ${className}Page({super.key});
@@ -285,6 +286,7 @@ class ${className}Page extends StatelessComponent {
     final className = '${_toPascalCase(name)}Layout';
     final content = '''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 
 class $className extends StatelessComponent {
   final Component child;
@@ -325,6 +327,7 @@ class $className extends StatelessComponent {
     if (allParams.isEmpty) {
       return '''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 
 class $className extends StatelessComponent {
   const $className({super.key});
@@ -348,6 +351,7 @@ class $className extends StatelessComponent {
 
     return '''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 
 class $className extends StatelessComponent {
 $paramFields
@@ -376,6 +380,7 @@ $displayFields
     if (fields.isEmpty) {
       return '''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 
 class $className extends StatelessComponent {
   const $className({super.key});
@@ -395,6 +400,7 @@ class $className extends StatelessComponent {
 
     return '''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 
 class $className extends StatelessComponent {
 $paramFields

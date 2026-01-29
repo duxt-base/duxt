@@ -1,9 +1,9 @@
 name: duxt
-description: A meta-framework for Jaspr with module-based architecture, file-based routing, layouts, and Rails-like scaffolding.
-version: 0.2.1
-homepage: https://github.com/flakerimi/duxt
-repository: https://github.com/flakerimi/duxt
-issue_tracker: https://github.com/flakerimi/duxt/issues
+description: A meta-framework for Jaspr with module-based architecture, file-based routing, layouts, and scaffold generators.
+version: 0.2.2
+homepage: https://github.com/base-al/duxt
+repository: https://github.com/base-al/duxt
+issue_tracker: https://github.com/base-al/duxt/issues
 
 environment:
   sdk: ^3.0.0
@@ -15,9 +15,13 @@ dependencies:
   watcher: ^1.1.0
   shelf: ^1.4.1
   shelf_static: ^1.1.2
+  shelf_proxy: ^1.0.4
   ansicolor: ^2.0.2
   http: ^1.2.0
   jaspr: ^0.22.1
+  jaspr_content: ^0.4.5
+  jaspr_router: ^0.8.0
+  markdown: ^7.3.0
 
 dev_dependencies:
   lints: ^6.0.0

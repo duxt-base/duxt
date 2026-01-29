@@ -9,8 +9,11 @@ import 'package:duxt/src/cli/generate_command.dart';
 import 'package:duxt/src/cli/g_command.dart';
 import 'package:duxt/src/cli/start_command.dart';
 import 'package:duxt/src/cli/scaffold_command.dart';
+import 'package:duxt/src/cli/delete_command.dart';
+import 'package:duxt/src/cli/info_command.dart';
+import 'package:duxt/src/cli/clean_command.dart';
 
-const version = '0.2.1';
+const version = '0.2.3';
 
 void main(List<String> args) async {
   // Handle version flag
@@ -39,6 +42,13 @@ Generate:
   g <type> <name>      Generate module, page, component, model, api, layout
   scaffold <name>      Generate full module with CRUD
 
+Delete:
+  d <type> <name>      Delete module, page, component, model, or api
+
+Utilities:
+  info                 Show project information
+  clean                Clean build artifacts
+
 Run "duxt help <command>" for more information.
 ''',
   )
@@ -48,7 +58,10 @@ Run "duxt help <command>" for more information.
     ..addCommand(BuildCommand())
     ..addCommand(GenerateCommand())
     ..addCommand(GCommand())
-    ..addCommand(ScaffoldCommand());
+    ..addCommand(ScaffoldCommand())
+    ..addCommand(DeleteCommand())
+    ..addCommand(InfoCommand())
+    ..addCommand(CleanCommand());
 
   try {
     final result = await runner.run(args);

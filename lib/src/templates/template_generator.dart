@@ -133,6 +133,7 @@ void main() {
   static Future<void> _createAppFile(String projectName, String targetDir) async {
     final content = r'''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 import 'package:jaspr_router/jaspr_router.dart';
 
 // Modules
@@ -175,6 +176,7 @@ class App extends StatelessComponent {
   static Future<void> _createDefaultLayout(String targetDir) async {
     final content = r'''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 import 'package:jaspr_router/jaspr_router.dart';
 
 class DefaultLayout extends StatelessComponent {
@@ -225,6 +227,7 @@ class DefaultLayout extends StatelessComponent {
     // Home page
     final pageContent = '''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 import '../components/welcome_card.dart';
 
 class HomePage extends StatelessComponent {
@@ -243,7 +246,7 @@ class HomePage extends StatelessComponent {
         ]),
         div(classes: 'flex justify-center gap-4', [
           a(
-            href: 'https://github.com/flakerimi/duxt',
+            href: 'https://github.com/base-al/duxt',
             classes: 'px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700',
             [text('Get Started')],
           ),
@@ -263,7 +266,7 @@ class HomePage extends StatelessComponent {
         ),
         WelcomeCard(
           title: 'Opinionated',
-          description: 'Rails-like conventions over configuration',
+          description: 'Conventions over configuration',
           icon: '🛤️',
         ),
       ]),
@@ -276,6 +279,7 @@ class HomePage extends StatelessComponent {
     // Welcome card component
     final componentContent = r'''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 
 class WelcomeCard extends StatelessComponent {
   final String title;
@@ -308,6 +312,7 @@ class WelcomeCard extends StatelessComponent {
   static Future<void> _createAboutModule(String targetDir) async {
     final content = r'''
 import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
 
 class AboutPage extends StatelessComponent {
   const AboutPage({super.key});
