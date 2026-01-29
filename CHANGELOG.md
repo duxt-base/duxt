@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-01-29
+
+### Added
+- **Fullstack template** - New projects include a complete blog example with SQLite
+- **Server API structure** - `server/db.dart`, `server/models/`, `server/api/`
+- **Multi-target builds** - `duxt build --target=linux-arm64`
+- **Cross-compilation** - Docker-based Linux builds from any platform
+- **Nested routing example** - `/company/team/engineering` demonstrates deep nesting
+
+### Changed
+- `duxt dev` now starts both frontend (4000) and API server (3001)
+- `duxt build` compiles server binary with architecture suffix
+- Template includes Blog, Showcase, Company, About modules
+- Default layout uses Duxt logo from duxt.dev
+
+### New CLI Options
+- `duxt dev --api-port=3001` - Set API server port
+- `duxt dev --no-api` - Skip API server
+- `duxt build --target=<platform>` - Target platform (linux-x64, linux-arm64, macos-x64, macos-arm64)
+- `duxt build --all-targets` - Build for all platforms
+
 ## [0.2.3] - 2026-01-29
 
 ### Changed
