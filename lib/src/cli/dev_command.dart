@@ -106,30 +106,33 @@ class DevCommand extends Command<int> {
       workingDirectory: projectDir,
     );
 
+    var hasShownReady = false;
+
     jasprProcess.stdout.listen((data) {
       final output = String.fromCharCodes(data).trim();
       if (output.isNotEmpty) {
         print('\x1B[34m[JASPR]\x1B[0m $output');
+
+        // Show ready message only after jaspr reports it's serving
+        if (!hasShownReady && output.contains('Serving at')) {
+          hasShownReady = true;
+          print('');
+          print('\x1B[32m✓\x1B[0m Ready!');
+          print('');
+          print('  \x1B[1mApp:\x1B[0m  \x1B[36mhttp://localhost:$port\x1B[0m');
+          if (apiProcess != null) {
+            print('  \x1B[1mAPI:\x1B[0m  \x1B[36mhttp://localhost:$apiPort\x1B[0m');
+          }
+          print('');
+          print('\x1B[90mPress Ctrl+C to stop\x1B[0m');
+          print('');
+        }
       }
     });
     jasprProcess.stderr.listen((data) {
       final output = String.fromCharCodes(data).trim();
       if (output.isNotEmpty) print('\x1B[31m[JASPR]\x1B[0m $output');
     });
-
-    // Wait for servers to start
-    await Future.delayed(Duration(seconds: 2));
-
-    print('');
-    print('\x1B[32m✓\x1B[0m Ready!');
-    print('');
-    print('  \x1B[1mApp:\x1B[0m  \x1B[36mhttp://localhost:$port\x1B[0m');
-    if (apiProcess != null) {
-      print('  \x1B[1mAPI:\x1B[0m  \x1B[36mhttp://localhost:$apiPort\x1B[0m');
-    }
-    print('');
-    print('\x1B[90mPress Ctrl+C to stop\x1B[0m');
-    print('');
 
     // Keep running until interrupted
     await ProcessSignal.sigint.watch().first;
