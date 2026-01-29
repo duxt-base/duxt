@@ -207,15 +207,15 @@ class DefaultLayout extends StatelessComponent {
       // Header with navigation
       DHeader(
         left: DLink(
-          to: '/',
-          variant: DLinkVariant.primary,
-          child: span(classes: 'text-xl font-bold', [text('Duxt')]),
+          href: '/',
+          label: 'Duxt',
+          color: DLinkColor.primary,
         ),
         right: DNavigationMenu(
           items: [
-            DNavigationMenuItem(label: 'Home', to: '/'),
-            DNavigationMenuItem(label: 'Showcase', to: '/showcase'),
-            DNavigationMenuItem(label: 'About', to: '/about'),
+            DNavigationItem(label: 'Home', href: '/'),
+            DNavigationItem(label: 'Showcase', href: '/showcase'),
+            DNavigationItem(label: 'About', href: '/about'),
           ],
         ),
       ),
@@ -244,7 +244,7 @@ class HomePage extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return DPage([
+    return DPage(children: [
       // Hero section
       DPageHero(
         headline: 'Welcome to Duxt',
@@ -256,14 +256,12 @@ class HomePage extends StatelessComponent {
             label: 'Get Started',
             color: DButtonColor.primary,
             size: DButtonSize.lg,
-            onClick: () {},
           ),
           DButton(
             label: 'Documentation',
             variant: DButtonVariant.outline,
             color: DButtonColor.neutral,
             size: DButtonSize.lg,
-            onClick: () {},
           ),
         ],
       ),
@@ -277,17 +275,17 @@ class HomePage extends StatelessComponent {
         columns: DPageGridColumns.three,
         children: [
           DPageCard(
-            icon: DIcon(icon: 'i-heroicons-cube'),
+            icon: DIcon(name: 'heroicons:cube'),
             title: 'Module-Based',
             description: 'Organize code by feature with pages, components, and api per module',
           ),
           DPageCard(
-            icon: DIcon(icon: 'i-heroicons-bolt'),
+            icon: DIcon(name: 'heroicons:bolt'),
             title: 'Simple API',
             description: 'Static Api class for clean HTTP calls',
           ),
           DPageCard(
-            icon: DIcon(icon: 'i-heroicons-cog-6-tooth'),
+            icon: DIcon(name: 'heroicons:cog-6-tooth'),
             title: 'Opinionated',
             description: 'Conventions over configuration for rapid development',
           ),
@@ -314,12 +312,12 @@ class AboutPage extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return DPage([
+    return DPage(children: [
       DPageHeader(
         title: 'About',
         description: 'Learn more about this project',
       ),
-      DContainer([
+      DContainer(children: [
         p(classes: 'text-lg text-gray-600 dark:text-gray-400 mb-8', [
           text(
             'Duxt is a meta-framework for Jaspr that brings modern conventions '
@@ -335,22 +333,22 @@ class AboutPage extends StatelessComponent {
         columns: DPageGridColumns.two,
         children: [
           DPageCard(
-            icon: DIcon(icon: 'i-heroicons-cube'),
+            icon: DIcon(name: 'heroicons:cube'),
             title: 'Module-based architecture',
             description: 'Organize your code by features for better maintainability',
           ),
           DPageCard(
-            icon: DIcon(icon: 'i-heroicons-server'),
+            icon: DIcon(name: 'heroicons:server'),
             title: 'Simple API client',
             description: 'Static Api class for clean HTTP calls',
           ),
           DPageCard(
-            icon: DIcon(icon: 'i-heroicons-arrow-path'),
+            icon: DIcon(name: 'heroicons:arrow-path'),
             title: 'DuxtState mixin',
             description: 'Easy SPA data loading patterns',
           ),
           DPageCard(
-            icon: DIcon(icon: 'i-heroicons-paint-brush'),
+            icon: DIcon(name: 'heroicons:paint-brush'),
             title: 'Tailwind CSS',
             description: 'Built-in Tailwind integration for styling',
           ),
@@ -377,18 +375,17 @@ class ShowcasePage extends StatefulComponent {
 }
 
 class _ShowcasePageState extends State<ShowcasePage> {
-  bool _loading = false;
   String _selectedTab = 'buttons';
 
   @override
   Component build(BuildContext context) {
-    return DPage([
+    return DPage(children: [
       DPageHeader(
         headline: 'Duxt UI',
         title: 'Component Showcase',
         description: 'Explore the beautiful components available in duxt_ui',
       ),
-      DContainer([
+      DContainer(children: [
         // Tabs for different component categories
         DTabs(
           items: [
@@ -397,8 +394,8 @@ class _ShowcasePageState extends State<ShowcasePage> {
             DTabItem(value: 'inputs', label: 'Inputs'),
             DTabItem(value: 'feedback', label: 'Feedback'),
           ],
-          value: _selectedTab,
-          onChanged: (value) => setState(() => _selectedTab = value),
+          defaultValue: _selectedTab,
+          onSelect: (value) => setState(() => _selectedTab = value),
         ),
 
         div(classes: 'mt-8', [
@@ -470,18 +467,18 @@ class _ShowcasePageState extends State<ShowcasePage> {
               columns: DPageGridColumns.three,
               children: [
                 DPageCard(
-                  icon: DIcon(icon: 'i-heroicons-rocket-launch'),
+                  icon: DIcon(name: 'heroicons:rocket-launch'),
                   title: 'Getting Started',
                   description: 'Learn how to get up and running quickly',
                   to: '/about',
                 ),
                 DPageCard(
-                  icon: DIcon(icon: 'i-heroicons-book-open'),
+                  icon: DIcon(name: 'heroicons:book-open'),
                   title: 'Documentation',
                   description: 'Read the full documentation',
                 ),
                 DPageCard(
-                  icon: DIcon(icon: 'i-heroicons-code-bracket'),
+                  icon: DIcon(name: 'heroicons:code-bracket'),
                   title: 'Examples',
                   description: 'Browse example projects',
                 ),
@@ -500,7 +497,7 @@ class _ShowcasePageState extends State<ShowcasePage> {
             _sectionTitle('Checkboxes & Switches'),
             div(classes: 'space-y-4 mb-8', [
               DCheckbox(label: 'Accept terms and conditions'),
-              DCheckbox(label: 'Checked by default', defaultChecked: true),
+              DCheckbox(label: 'Checked by default', checked: true),
               DSwitch(label: 'Enable notifications'),
             ]),
             _sectionTitle('Select'),
