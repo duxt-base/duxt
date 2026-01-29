@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-01-29
+
+### Fixed
+- Template now correctly includes Blog, Company modules
+- Dark theme with cyan color scheme applied
+
 ## [0.3.1] - 2026-01-29
 
 ### Added

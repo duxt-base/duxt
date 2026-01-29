@@ -58,7 +58,7 @@ class UpdateCommand extends Command<int> {
 
   Future<String> _getCurrentVersion() async {
     // Read from our own pubspec or use hardcoded version
-    return '0.3.1'; // This gets updated with each release
+    return '0.3.2'; // This gets updated with each release
   }
 
   Future<String> _getLatestVersion() async {

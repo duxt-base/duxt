@@ -14,7 +14,7 @@ import 'package:duxt/src/cli/info_command.dart';
 import 'package:duxt/src/cli/clean_command.dart';
 import 'package:duxt/src/cli/update_command.dart';
 
-const version = '0.3.1';
+const version = '0.3.2';
 
 void main(List<String> args) async {
   // Handle version flag
