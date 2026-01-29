@@ -275,17 +275,17 @@ class HomePage extends StatelessComponent {
         columns: DPageGridColumns.three,
         children: [
           DPageCard(
-            icon: DIcon(name: 'heroicons:cube'),
+            icon: DIcon(name: 'lucide:box'),
             title: 'Module-Based',
             description: 'Organize code by feature with pages, components, and api per module',
           ),
           DPageCard(
-            icon: DIcon(name: 'heroicons:bolt'),
+            icon: DIcon(name: 'lucide:zap'),
             title: 'Simple API',
             description: 'Static Api class for clean HTTP calls',
           ),
           DPageCard(
-            icon: DIcon(name: 'heroicons:cog-6-tooth'),
+            icon: DIcon(name: 'lucide:settings'),
             title: 'Opinionated',
             description: 'Conventions over configuration for rapid development',
           ),
@@ -333,22 +333,22 @@ class AboutPage extends StatelessComponent {
         columns: DPageGridColumns.two,
         children: [
           DPageCard(
-            icon: DIcon(name: 'heroicons:cube'),
+            icon: DIcon(name: 'lucide:box'),
             title: 'Module-based architecture',
             description: 'Organize your code by features for better maintainability',
           ),
           DPageCard(
-            icon: DIcon(name: 'heroicons:server'),
+            icon: DIcon(name: 'lucide:server'),
             title: 'Simple API client',
             description: 'Static Api class for clean HTTP calls',
           ),
           DPageCard(
-            icon: DIcon(name: 'heroicons:arrow-path'),
+            icon: DIcon(name: 'lucide:refresh-cw'),
             title: 'DuxtState mixin',
             description: 'Easy SPA data loading patterns',
           ),
           DPageCard(
-            icon: DIcon(name: 'heroicons:paint-brush'),
+            icon: DIcon(name: 'lucide:paintbrush'),
             title: 'Tailwind CSS',
             description: 'Built-in Tailwind integration for styling',
           ),
@@ -467,18 +467,18 @@ class _ShowcasePageState extends State<ShowcasePage> {
               columns: DPageGridColumns.three,
               children: [
                 DPageCard(
-                  icon: DIcon(name: 'heroicons:rocket-launch'),
+                  icon: DIcon(name: 'lucide:rocket'),
                   title: 'Getting Started',
                   description: 'Learn how to get up and running quickly',
                   to: '/about',
                 ),
                 DPageCard(
-                  icon: DIcon(name: 'heroicons:book-open'),
+                  icon: DIcon(name: 'lucide:book-open'),
                   title: 'Documentation',
                   description: 'Read the full documentation',
                 ),
                 DPageCard(
-                  icon: DIcon(name: 'heroicons:code-bracket'),
+                  icon: DIcon(name: 'lucide:code'),
                   title: 'Examples',
                   description: 'Browse example projects',
                 ),
@@ -612,6 +612,8 @@ class _ShowcasePageState extends State<ShowcasePage> {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>$projectName</title>
   <link rel="stylesheet" href="/styles.css">
+  <!-- Iconify for icon support (Lucide, Heroicons, etc.) -->
+  <script src="https://code.iconify.design/3/3.1.0/iconify.min.js"></script>
 </head>
 <body>
   <script src="/main.client.dart.js" defer></script>
