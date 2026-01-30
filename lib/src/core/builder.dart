@@ -82,12 +82,37 @@ class DuxtBuilder {
         return;
       }
     } else {
-      // Native compilation
-      final result = await Process.run(
+      // Try dart compile exe first (traditional method)
+      var result = await Process.run(
         'dart',
         ['compile', 'exe', serverMain, '-o', serverBinary],
         workingDirectory: projectDir,
       );
+
+      // If it fails due to build hooks (native assets), try dart build cli
+      if (result.exitCode != 0 && result.stderr.toString().contains('build hooks')) {
+        print('  Using dart build cli (native assets detected)...');
+
+        // dart build cli creates a bundle directory structure
+        // Output directly to .output/ so structure is: .output/bundle/bin/main and .output/bundle/lib/
+        result = await Process.run(
+          'dart',
+          ['build', 'cli', '-t', serverMain, '-o', p.join(projectDir, outputDir)],
+          workingDirectory: projectDir,
+        );
+
+        if (result.exitCode == 0) {
+          // Rename the binary to include target suffix
+          final binDir = Directory(p.join(projectDir, outputDir, 'bundle', 'bin'));
+          if (binDir.existsSync()) {
+            final files = binDir.listSync().whereType<File>().toList();
+            if (files.isNotEmpty) {
+              final newName = 'server-$buildTarget';
+              await files.first.rename(p.join(binDir.path, newName));
+            }
+          }
+        }
+      }
 
       if (result.exitCode != 0) {
         throw Exception('Server compilation failed: ${result.stderr}');

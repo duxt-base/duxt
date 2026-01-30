@@ -26,6 +26,22 @@ class GenerateCommand extends Command<int> {
     final projectDir = Directory.current.path;
     final outputDir = argResults!['output'] as String;
 
+    // Check if this is a fullstack project
+    final serverDir = Directory('$projectDir/server');
+    if (serverDir.existsSync()) {
+      print('');
+      print('\x1B[31m✗\x1B[0m Cannot generate static site for fullstack projects.');
+      print('');
+      print('  Your project has a \x1B[1mserver/\x1B[0m directory with API routes.');
+      print('  Static sites cannot run server-side code.');
+      print('');
+      print('  Options:');
+      print('    • \x1B[1mduxt build\x1B[0m   Build fullstack app (frontend + server binary)');
+      print('    • \x1B[1mduxt preview\x1B[0m Preview production build locally');
+      print('');
+      return 1;
+    }
+
     print('\x1B[36mDuxt\x1B[0m Generating static site...');
     print('');
 

@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.8] - 2026-01-30
+
+### Added
+- `duxt doctor` command - Shows environment and project diagnostics, wraps `jaspr doctor`
+
+### Fixed
+- `duxt clean` now also runs `jaspr clean` for complete cleanup
+- Removed `web/index.html` from project template - allows SSR/SSG to work correctly
+- SSR now works properly with `duxt dev` (jaspr serve)
+
+### Changed
+- Updated CLI help to show jaspr command mappings
+
+## [0.3.7] - 2026-01-29
+
+### Added
+- `duxt version` command
+
+## [0.3.6] - 2026-01-29
+
+### Fixed
+- Fixed @source paths in styles.tw.css (relative to web/ directory)
+- `duxt dev` now runs `dart pub get` automatically if pubspec.lock missing
+
+## [0.3.5] - 2026-01-29
+
+### Added
+- **Built-in Tailwind CSS compilation** - `duxt dev` and `duxt build` now compile Tailwind directly
+- No need for `jaspr_tailwind` dependency - Duxt handles everything
+- Tailwind watch mode during development with live recompilation
+
+### Changed
+- Removed `jaspr_tailwind` from template dev_dependencies
+- Template styles.tw.css now uses @source directives for Tailwind v4
+
+## [0.3.4] - 2026-01-29
+
+### Added
+- `duxt dev` now syncs duxt_ui package to `.duxt/packages/` for Tailwind CSS scanning
+- Cross-platform support for Tailwind class scanning (works on Windows, macOS, Linux)
+- Template now includes `.gitignore` with common exclusions
+
+### Fixed
+- duxt_ui Tailwind classes now work correctly when installed from pub.dev
+
 ## [0.3.3] - 2026-01-29
 
 ### Fixed

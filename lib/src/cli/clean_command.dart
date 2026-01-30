@@ -9,20 +9,37 @@ class CleanCommand extends Command<int> {
   final description = 'Clean build artifacts and caches';
 
   CleanCommand() {
-    argParser.addFlag('all', abbr: 'a', help: 'Also remove .dart_tool and pubspec.lock');
+    argParser.addFlag('all', abbr: 'a', help: 'Also remove .dart_tool, pubspec.lock, and database files');
   }
 
   @override
   Future<int> run() async {
     final all = argResults!['all'] as bool;
+    final projectDir = Directory.current.path;
 
     print('\x1B[90m→\x1B[0m Cleaning build artifacts...');
 
-    // Standard directories to clean
+    // Run jaspr clean first
+    print('  Running jaspr clean...');
+    final home = Platform.environment['HOME'] ?? '';
+    final jasprPath = '$home/.pub-cache/bin/jaspr';
+
+    final jasprClean = await Process.run(
+      File(jasprPath).existsSync() ? jasprPath : 'jaspr',
+      ['clean'],
+      workingDirectory: projectDir,
+    );
+
+    if (jasprClean.exitCode == 0) {
+      print('  \x1B[32m✓\x1B[0m jaspr clean completed');
+    }
+
+    // Standard directories to clean (additional to jaspr clean)
     final dirs = [
-      'build',
       '.jaspr',
       'web/.jaspr',
+      '.output',
+      '.duxt',
     ];
 
     // Additional directories if --all
@@ -32,14 +49,11 @@ class CleanCommand extends Command<int> {
       ]);
     }
 
-    var cleaned = 0;
-
     for (final dirPath in dirs) {
       final dir = Directory(dirPath);
       if (dir.existsSync()) {
         await dir.delete(recursive: true);
         print('  Deleted: $dirPath/');
-        cleaned++;
       }
     }
 
@@ -49,28 +63,20 @@ class CleanCommand extends Command<int> {
       if (lockFile.existsSync()) {
         await lockFile.delete();
         print('  Deleted: pubspec.lock');
-        cleaned++;
       }
     }
 
-    // Clean database file if exists
-    final dbFile = File('blog.db');
-    if (dbFile.existsSync()) {
-      stdout.write('  Delete blog.db? (y/N): ');
-      final response = stdin.readLineSync()?.toLowerCase();
-      if (response == 'y' || response == 'yes') {
+    // Clean database files only with --all flag
+    if (all) {
+      final dbFile = File('blog.db');
+      if (dbFile.existsSync()) {
         await dbFile.delete();
         print('  Deleted: blog.db');
-        cleaned++;
       }
     }
 
-    if (cleaned == 0) {
-      print('  Nothing to clean.');
-    } else {
-      print('');
-      print('\x1B[32m✓\x1B[0m Cleaned $cleaned item(s)');
-    }
+    print('');
+    print('\x1B[32m✓\x1B[0m Clean complete!');
 
     if (all) {
       print('');

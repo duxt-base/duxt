@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
+import 'package:shelf_static/shelf_static.dart';
 
 import 'api_handler.dart';
 
@@ -10,6 +11,7 @@ import 'api_handler.dart';
 class DuxtServer {
   final int port;
   final String apiDir;
+  final String? staticDir;
   final List<Middleware> middleware;
   final Map<String, Handler> _routes = {};
   HttpServer? _server;
@@ -17,6 +19,7 @@ class DuxtServer {
   DuxtServer({
     this.port = 3000,
     this.apiDir = 'server/api',
+    this.staticDir,
     this.middleware = const [],
   });
 
@@ -119,6 +122,28 @@ class DuxtServer {
             'params': params,
           });
           return entry.value(newRequest);
+        }
+      }
+
+      // Try serving static files if staticDir is set
+      if (staticDir != null) {
+        final staticHandler = createStaticHandler(
+          staticDir!,
+          defaultDocument: 'index.html',
+        );
+        final staticResponse = await staticHandler(request);
+        if (staticResponse.statusCode != 404) {
+          return staticResponse;
+        }
+        // For SPA routing, try serving index.html for HTML requests
+        if (request.headers['accept']?.contains('text/html') ?? false) {
+          final indexFile = File('$staticDir/index.html');
+          if (indexFile.existsSync()) {
+            return Response.ok(
+              indexFile.readAsStringSync(),
+              headers: {'Content-Type': 'text/html'},
+            );
+          }
         }
       }
 

@@ -42,7 +42,12 @@ class TemplateGenerator {
 
     // Web files
     await _createTailwindStyles(targetDir);
-    await _createIndexHtml(dartName, targetDir);
+    // Note: Don't create web/index.html - jaspr generates it from Document component
+    // This allows SSR/SSG to work properly
+
+    // Config files
+    await _createGitignore(targetDir);
+    await _createDockerfile(targetDir);
 
     print('');
     print('  \x1B[32m✓\x1B[0m Created project structure');
@@ -64,7 +69,13 @@ class TemplateGenerator {
     print('    ├── models/post.dart            Post model');
     print('    └── api/posts.dart              API routes');
     print('');
-    print('  \x1B[36mℹ\x1B[0m  Run \x1B[1mduxt dev\x1B[0m to start both frontend & API');
+    print('  \x1B[36mDevelopment:\x1B[0m');
+    print('    duxt dev                        Start dev server');
+    print('');
+    print('  \x1B[36mProduction:\x1B[0m');
+    print('    duxt build                      Build for deployment');
+    print('    docker build -t myapp .         Build Docker image');
+    print('    docker-compose up               Run with Docker Compose');
   }
 
   static Future<void> _createDirectories(String targetDir) async {
@@ -103,7 +114,7 @@ environment:
 dependencies:
   jaspr: ^0.22.1
   jaspr_router: ^0.8.1
-  duxt: ^0.2.8
+  duxt: ^0.3.4
   duxt_ui: ^0.2.3
   sqlite3: ^2.4.0
   web: ^1.0.0
@@ -112,7 +123,6 @@ dev_dependencies:
   build_runner: ^2.4.0
   build_web_compilers: ^4.4.8
   jaspr_builder: ^0.22.1
-  jaspr_tailwind: ^0.3.6
   lints: ^4.0.0
 
 jaspr:
@@ -634,7 +644,7 @@ class _BlogPageState extends State<BlogPage> {
 
   Future<void> _fetchPosts() async {
     try {
-      final response = await web.window.fetch('http://localhost:3001/api/posts'.toJS).toDart;
+      final response = await web.window.fetch('/api/posts'.toJS).toDart;
       if (response.ok) {
         final jsText = await response.text().toDart;
         final data = jsonDecode(jsText.toDart);
@@ -722,7 +732,7 @@ class _BlogPostPageState extends State<BlogPostPage> {
 
   Future<void> _fetchPost() async {
     try {
-      final response = await web.window.fetch('http://localhost:3001/api/posts/${component.slug}'.toJS).toDart;
+      final response = await web.window.fetch('/api/posts/${component.slug}'.toJS).toDart;
       if (response.ok) {
         final jsText = await response.text().toDart;
         final data = jsonDecode(jsText.toDart);
@@ -774,14 +784,18 @@ class _BlogPostPageState extends State<BlogPostPage> {
   static Future<void> _createServerFiles(String targetDir) async {
     // server/db.dart - Database connection
     final dbContent = """
+import 'dart:io';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 /// Database singleton
 class Db {
   static late sqlite.Database _db;
 
-  static void init([String path = 'blog.db']) {
-    _db = sqlite.sqlite3.open(path);
+  static void init([String? path]) {
+    // Use DATA_DIR env var for Docker, or current dir for local dev
+    final dataDir = Platform.environment['DATA_DIR'] ?? '.';
+    final dbPath = path ?? '\$dataDir/blog.db';
+    _db = sqlite.sqlite3.open(dbPath);
     _createTables();
   }
 
@@ -990,6 +1004,7 @@ void registerPostRoutes(DuxtServer server) {
 
     // server/main.dart - Entry point
     final mainContent = r'''
+import 'dart:io';
 import 'package:duxt/server.dart';
 import 'db.dart';
 import 'models/post.dart';
@@ -1000,9 +1015,16 @@ void main() {
   Db.init();
   Post.seed();
 
+  // Get port from environment (for Docker)
+  final port = int.tryParse(Platform.environment['PORT'] ?? '') ?? 3001;
+
+  // Check for static files directory (for Docker production)
+  final staticDir = Platform.environment['STATIC_DIR'];
+
   // Create server
   final server = DuxtServer(
-    port: 3001,
+    port: port,
+    staticDir: staticDir,
     middleware: [cors(), jsonBody(), logger()],
   );
 
@@ -1012,7 +1034,8 @@ void main() {
   // Start server
   server.start();
   print('');
-  print('API server running at http://localhost:3001');
+  print('API server running at http://localhost:$port');
+  if (staticDir != null) print('Serving static files from: $staticDir');
   print('');
   print('Endpoints:');
   print('  GET    /api/posts');
@@ -1028,6 +1051,10 @@ void main() {
   static Future<void> _createTailwindStyles(String targetDir) async {
     final content = '''
 @import "tailwindcss";
+
+/* Source files for Tailwind to scan (paths relative to web/) */
+@source "../lib/**/*.dart";
+@source "../.duxt/packages/**/*.dart";
 
 @theme {
   /* Primary color - cyan (Duxt brand #06b6d4) */
@@ -1058,23 +1085,171 @@ void main() {
     await File(p.join(targetDir, 'web', 'styles.tw.css')).writeAsString(content);
   }
 
-  static Future<void> _createIndexHtml(String projectName, String targetDir) async {
+  // Note: web/index.html is NOT created - jaspr generates it from Document component
+  // This allows both SPA and SSR/SSG modes to work correctly
+
+  static Future<void> _createGitignore(String targetDir) async {
     final content = '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>$projectName</title>
-  <link rel="stylesheet" href="/styles.css">
-  <!-- Iconify web component for icon support -->
-  <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
-</head>
-<body>
-  <script src="/main.client.dart.js" defer></script>
-</body>
-</html>
+# Dart/Flutter
+.dart_tool/
+.packages
+build/
+pubspec.lock
+
+# Duxt
+.duxt/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Database
+*.db
+*.db-journal
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated
+*.g.dart
+*.freezed.dart
 ''';
-    await File(p.join(targetDir, 'web', 'index.html')).writeAsString(content);
+    await File(p.join(targetDir, '.gitignore')).writeAsString(content);
+  }
+
+  static Future<void> _createDockerfile(String targetDir) async {
+    final dockerfile = '''
+# Build stage
+FROM dart:stable AS build
+
+WORKDIR /app
+
+# Install Jaspr CLI and Tailwind CSS
+RUN dart pub global activate jaspr_cli && \\
+    apt-get update && apt-get install -y curl && \\
+    ARCH=\$(dpkg --print-architecture) && \\
+    if [ "\$ARCH" = "arm64" ]; then TW_ARCH="arm64"; else TW_ARCH="x64"; fi && \\
+    curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-\$TW_ARCH && \\
+    chmod +x tailwindcss-linux-\$TW_ARCH && \\
+    mv tailwindcss-linux-\$TW_ARCH /usr/local/bin/tailwindcss
+
+# Copy pubspec files first (for caching)
+COPY pubspec.* ./
+
+# Get dependencies
+RUN dart pub get
+
+# Copy source code
+COPY . .
+
+# Sync duxt_ui package for Tailwind CSS scanning
+RUN mkdir -p .duxt/packages/duxt_ui && \\
+    cp -r /root/.pub-cache/hosted/pub.dev/duxt_ui-*/lib/* .duxt/packages/duxt_ui/
+
+# Compile Tailwind CSS
+RUN tailwindcss --input web/styles.tw.css --output web/styles.css --minify
+
+# Build frontend
+RUN ~/.pub-cache/bin/jaspr build
+
+# Build server (with native assets support)
+RUN dart build cli -t server/main.dart -o /app/.output
+
+# Runtime stage - nginx for static files, dart server for API
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \\
+    ca-certificates \\
+    libsqlite3-0 \\
+    nginx \\
+    supervisor \\
+    && rm -rf /var/lib/apt/lists/* \\
+    && ln -s /usr/lib/*-linux-gnu/libsqlite3.so.0 /usr/lib/libsqlite3.so 2>/dev/null || true
+
+WORKDIR /app
+
+# Copy server bundle (binary + native libs)
+COPY --from=build /app/.output/bundle /app
+
+# Copy frontend static files to nginx
+COPY --from=build /app/build/jaspr /var/www/html
+
+# Nginx config - proxy /api to dart server
+RUN echo 'server { \\
+    listen 3000; \\
+    root /var/www/html; \\
+    index index.html; \\
+    location /api { \\
+        proxy_pass http://127.0.0.1:3001; \\
+        proxy_set_header Host \$host; \\
+        proxy_set_header X-Real-IP \$remote_addr; \\
+    } \\
+    location / { \\
+        try_files \$uri \$uri/ /index.html; \\
+    } \\
+}' > /etc/nginx/sites-available/default
+
+# Supervisor config
+RUN echo '[supervisord]\\nnodaemon=true\\n\\n[program:nginx]\\ncommand=nginx -g "daemon off;"\\n\\n[program:api]\\ncommand=/app/bin/main\\ndirectory=/app\\nenvironment=PORT="3001",DATA_DIR="/app/data"\\n' > /etc/supervisor/conf.d/app.conf
+
+# Create data directory
+RUN mkdir -p /app/data
+
+ENV PORT=3001
+ENV DATA_DIR=/app/data
+
+EXPOSE 3000
+
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
+''';
+    await File(p.join(targetDir, 'Dockerfile')).writeAsString(dockerfile);
+
+    // Also create .dockerignore
+    final dockerignore = '''
+# Git
+.git
+.gitignore
+
+# Dart build artifacts
+.dart_tool
+build
+.output
+.duxt
+
+# IDE
+.idea
+.vscode
+*.iml
+
+# Database (local dev only)
+*.db
+*.db-journal
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+''';
+    await File(p.join(targetDir, '.dockerignore')).writeAsString(dockerignore);
+
+    // Also create docker-compose.yml for easy deployment
+    final compose = '''
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - app-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  app-data:
+''';
+    await File(p.join(targetDir, 'docker-compose.yml')).writeAsString(compose);
   }
 }

@@ -10,13 +10,35 @@
 /// - Table of contents generation
 /// - Navigation structure building
 /// - Documentation layouts
+/// - Custom component embedding in markdown
+/// - jaspr_content integration
 ///
 /// ## Usage
+///
+/// ### Using DuxtContentApp (Recommended)
 ///
 /// ```dart
 /// import 'package:duxt/content.dart';
 ///
-/// // Configure the content loader
+/// // In main.server.dart
+/// runApp(
+///   Document(
+///     body: DuxtContentApp(
+///       layouts: [DocsLayout(), UiLayout()],
+///       components: [CodeBlock(), Callout(), Image(zoom: true)],
+///       theme: ContentTheme(
+///         primary: ThemeColor(ThemeColors.cyan.$500),
+///       ),
+///     ),
+///   ),
+/// );
+/// ```
+///
+/// ### Using ContentLoader (Manual)
+///
+/// ```dart
+/// import 'package:duxt/content.dart';
+///
 /// final loader = ContentLoader(
 ///   config: ContentLoaderConfig(
 ///     contentDir: 'content',
@@ -24,15 +46,11 @@
 ///   ),
 /// );
 ///
-/// // Load a single document
 /// final doc = await loader.load('getting-started/index');
-///
-/// // Load all documents from a directory
 /// final docs = await loader.loadDirectory('components');
-///
-/// // Build navigation from content structure
 /// final nav = await loader.loadNavigation();
 /// ```
 library;
 
 export 'src/content/content.dart';
+export 'src/content/duxt_content_app.dart';
