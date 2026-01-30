@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.10] - 2026-01-30
+
+### Added
+- Added `example/example.dart` for pub.dev scoring
+
+### Changed
+- Improved README with latest v0.3.x features
+- Removed emojis from README
+- Added CLI command table with jaspr equivalents
+- Added build options, dev options, delete command documentation
+- Added Tailwind CSS section
+
 ## [0.3.9] - 2026-01-30
 
 ### Fixed

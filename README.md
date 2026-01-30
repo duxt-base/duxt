@@ -14,22 +14,24 @@
 
 ---
 
-## ✨ Features
+## Features
 
 | Feature | Description |
 |---------|-------------|
-| 📁 **Module-Based Architecture** | Organize code by feature with pages, components, models & APIs |
-| 🛣️ **File-Based Routing** | Pages auto-generate routes — no manual configuration |
-| 🌐 **Simple API Client** | Static `Api` class with auth, headers & error handling |
-| ⚡ **SPA State Management** | `DuxtState` mixin handles loading, error & data states |
-| 🔧 **Scaffold Generator** | Full CRUD generation with a single command |
-| 🎨 **Tailwind CSS** | First-class Tailwind integration out of the box |
-| 🔒 **Middleware** | Route guards for authentication & authorization |
-| 📝 **Content Support** | Markdown content with frontmatter for docs sites |
+| **Module-Based Architecture** | Organize code by feature with pages, components, models & APIs |
+| **File-Based Routing** | Pages auto-generate routes — no manual configuration |
+| **Fullstack Template** | New projects include a complete blog example with SQLite |
+| **Built-in Tailwind CSS** | Automatic Tailwind compilation with watch mode |
+| **Multi-Target Builds** | Cross-compile for linux-x64, linux-arm64, macos-x64, macos-arm64 |
+| **Simple API Client** | Static `Api` class with auth, headers & error handling |
+| **SPA State Management** | `DuxtState` mixin handles loading, error & data states |
+| **Scaffold Generator** | Full CRUD generation with a single command |
+| **Middleware** | Route guards for authentication & authorization |
+| **Content Support** | Markdown content with frontmatter for docs sites |
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -46,21 +48,23 @@ dart pub get
 duxt dev
 ```
 
-Your app is running at `http://localhost:8080` 🎉
+Your app is running at `http://localhost:4000` with:
+- SSR frontend on port 4000
+- API server on port 3001
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 my-app/
 ├── lib/
 │   ├── posts/                    # Feature module
 │   │   ├── pages/
-│   │   │   ├── index.dart        # → /posts
-│   │   │   ├── [id].dart         # → /posts/:id
+│   │   │   ├── index.dart        # -> /posts
+│   │   │   ├── [id].dart         # -> /posts/:id
 │   │   │   └── [id]/
-│   │   │       └── edit.dart     # → /posts/:id/edit
+│   │   │       └── edit.dart     # -> /posts/:id/edit
 │   │   ├── components/
 │   │   │   └── post_card.dart
 │   │   ├── model.dart
@@ -72,28 +76,61 @@ my-app/
 │   │   └── middleware/
 │   ├── app.dart
 │   └── main.dart
+├── server/                       # Backend
+│   ├── db.dart                   # Database setup
+│   ├── api/                      # API routes
+│   └── models/
 ├── web/
-│   └── index.html
+│   └── styles.tw.css            # Tailwind input
 └── .duxt/                        # Generated files
     └── routes.g.dart
 ```
 
 ---
 
-## 🖥️ CLI Commands
+## CLI Commands
 
-| Command | Description |
-|---------|-------------|
-| `duxt create <name>` | Create a new project |
-| `duxt dev [--port]` | Start dev server with hot reload |
-| `duxt build` | Build for production |
-| `duxt start [--port]` | Run production server |
-| `duxt g <type> <name>` | Generate files |
-| `duxt scaffold <name>` | Generate full CRUD module |
+| Command | Description | Jaspr Equivalent |
+|---------|-------------|------------------|
+| `duxt create` | Create a new project | - |
+| `duxt dev` | Start dev server with SSR + hot reload | `jaspr serve` |
+| `duxt build` | Build for production | `jaspr build` |
+| `duxt start` | Run production server | - |
+| `duxt preview` | Preview production build locally | - |
+| `duxt generate` | Generate static site (SSG only) | - |
+| `duxt g` | Generate files | - |
+| `duxt scaffold` | Generate full CRUD module | - |
+| `duxt d` | Delete module, page, or component | - |
+| `duxt doctor` | Show environment diagnostics | `jaspr doctor` |
+| `duxt clean` | Clean build artifacts | `jaspr clean` |
+| `duxt update` | Update CLI to latest version | - |
+| `duxt version` | Show version | - |
+
+### Development Options
+
+```bash
+# Start with custom ports
+duxt dev --port=8080 --api-port=4000
+
+# Skip API server
+duxt dev --no-api
+```
+
+### Build Options
+
+```bash
+# Build for specific target
+duxt build --target=linux-arm64
+
+# Build for all targets
+duxt build --all-targets
+
+# Available targets: linux-x64, linux-arm64, macos-x64, macos-arm64
+```
 
 ---
 
-## ⚙️ Generators
+## Generators
 
 ### Generate Files
 
@@ -132,9 +169,17 @@ Generates:
 - Detail page
 - Create/Edit forms
 
+### Delete Files
+
+```bash
+duxt d module posts      # Delete entire module
+duxt d page posts/[id]   # Delete specific page
+duxt d component posts/card
+```
+
 ---
 
-## 🌐 API Client
+## API Client
 
 ### Configuration
 
@@ -210,7 +255,7 @@ class PostsApi {
 
 ---
 
-## 🔄 State Management (SPA)
+## State Management (SPA)
 
 ### DuxtState
 
@@ -270,7 +315,7 @@ class _DashboardState extends DuxtMultiState<DashboardPage> {
 
 ---
 
-## 🔒 Middleware
+## Middleware
 
 ### Create Middleware
 
@@ -306,7 +351,7 @@ class SecurePage extends DuxtPage {
 
 ---
 
-## 📐 Layouts
+## Layouts
 
 ### Create a Layout
 
@@ -340,7 +385,7 @@ class DashboardPage extends DuxtPage {
 
 ---
 
-## 🛠️ Server API (Backend)
+## Server API (Backend)
 
 ### Create API Routes
 
@@ -381,7 +426,7 @@ void main() {
 
 ---
 
-## 📝 Content & Documentation
+## Content & Documentation
 
 Build documentation sites with markdown:
 
@@ -402,13 +447,32 @@ print(content.toc);
 
 ---
 
-## 🎨 Using with Duxt UI
+## Tailwind CSS
+
+Duxt includes built-in Tailwind CSS compilation. No additional setup required.
+
+```css
+/* web/styles.tw.css */
+@import "tailwindcss";
+
+@source "../lib/**/*.dart";
+@source "../.duxt/packages/**/*.dart";
+```
+
+Tailwind automatically:
+- Compiles on `duxt dev` with watch mode
+- Builds optimized CSS on `duxt build`
+- Scans Dart files for class names
+
+---
+
+## Using with Duxt UI
 
 Duxt works seamlessly with [Duxt UI](https://github.com/duxt-base/duxt-ui) for beautiful, pre-built components:
 
 ```yaml
 dependencies:
-  duxt: ^0.2.2
+  duxt: ^0.3.0
   duxt_ui: ^0.2.0
 ```
 
@@ -434,20 +498,21 @@ class HomePage extends DuxtPage {
 
 ---
 
-## 📦 Requirements
+## Requirements
 
 - **Dart SDK** ^3.0.0
 - **Jaspr** ^0.22.1
+- **Tailwind CSS** v4+ (auto-detected or installed)
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 Visit [duxt.dev](https://duxt.dev) for full documentation.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) first.
 
@@ -459,7 +524,7 @@ Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md)
 
 ---
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
