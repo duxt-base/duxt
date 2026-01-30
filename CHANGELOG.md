@@ -2,40 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.3.10] - 2026-01-30
-
-### Added
-- Added `example/example.dart` for pub.dev scoring
-
-### Changed
-- Improved README with latest v0.3.x features
-- Removed emojis from README
-- Added CLI command table with jaspr equivalents
-- Added build options, dev options, delete command documentation
-- Added Tailwind CSS section
-
-## [0.3.9] - 2026-01-30
-
-### Fixed
-- `duxt update` now shows correct current version (was hardcoded to 0.3.2)
-
-## [0.3.8] - 2026-01-30
+## [0.3.7] - 2026-01-30
 
 ### Added
 - `duxt doctor` command - Shows environment and project diagnostics, wraps `jaspr doctor`
+- `duxt version` command
+- Added `example/example.dart` for pub.dev scoring
 
 ### Fixed
+- `duxt update` now shows correct current version (was hardcoded to 0.3.2)
 - `duxt clean` now also runs `jaspr clean` for complete cleanup
 - Removed `web/index.html` from project template - allows SSR/SSG to work correctly
 - SSR now works properly with `duxt dev` (jaspr serve)
 
 ### Changed
+- Improved README with latest features documentation
 - Updated CLI help to show jaspr command mappings
-
-## [0.3.7] - 2026-01-29
-
-### Added
-- `duxt version` command
 
 ## [0.3.6] - 2026-01-29
 
