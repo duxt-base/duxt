@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.9] - 2026-01-30
+
+### Fixed
+- `duxt update` now shows correct current version (was hardcoded to 0.3.2)
+
 ## [0.3.8] - 2026-01-30
 
 ### Added

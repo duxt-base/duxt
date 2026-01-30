@@ -5,6 +5,10 @@ import 'package:args/command_runner.dart';
 /// Command to update Duxt CLI
 /// Usage: duxt update
 class UpdateCommand extends Command<int> {
+  final String currentVersion;
+
+  UpdateCommand(this.currentVersion);
+
   @override
   final name = 'update';
 
@@ -18,8 +22,6 @@ class UpdateCommand extends Command<int> {
     print('');
 
     try {
-      // Get current version
-      final currentVersion = await _getCurrentVersion();
       print('  Current version: \x1B[33m$currentVersion\x1B[0m');
 
       // Get latest version from pub.dev
@@ -54,11 +56,6 @@ class UpdateCommand extends Command<int> {
       print('\x1B[31m✗\x1B[0m Update failed: $e');
       return 1;
     }
-  }
-
-  Future<String> _getCurrentVersion() async {
-    // Read from our own pubspec or use hardcoded version
-    return '0.3.2'; // This gets updated with each release
   }
 
   Future<String> _getLatestVersion() async {

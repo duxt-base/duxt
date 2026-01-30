@@ -17,7 +17,7 @@ import 'package:duxt/src/cli/clean_command.dart';
 import 'package:duxt/src/cli/update_command.dart';
 import 'package:duxt/src/cli/version_command.dart';
 
-const version = '0.3.8';
+const version = '0.3.9';
 
 void main(List<String> args) async {
   // Handle version flag
@@ -75,7 +75,7 @@ Run "duxt help <command>" for more information.
     ..addCommand(InfoCommand())
     ..addCommand(DoctorCommand())
     ..addCommand(CleanCommand())
-    ..addCommand(UpdateCommand())
+    ..addCommand(UpdateCommand(version))
     ..addCommand(VersionCommand(version));
 
   try {
