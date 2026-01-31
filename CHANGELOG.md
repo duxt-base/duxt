@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.9] - 2026-01-31
+
+### Fixed
+- Template: Improved default layout - sticky header with backdrop blur, proper footer
+- Template: Fixed markdown content pages to use dark theme consistently
+- Template: Added prose-invert styling for markdown with cyan accents
+
 ## [0.3.8] - 2026-01-31
 
 ### Added

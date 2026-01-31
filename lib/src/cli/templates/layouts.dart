@@ -12,24 +12,24 @@ class DefaultLayout extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return div(classes: 'relative', [
-      header(classes: 'fixed top-0 left-0 right-0 z-50 bg-transparent', [
+    return div(classes: 'min-h-screen bg-gray-950 flex flex-col', [
+      header(classes: 'sticky top-0 z-50 bg-gray-900/95 backdrop-blur border-b border-gray-800', [
         div(classes: 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8', [
           div(classes: 'flex h-16 items-center justify-between', [
-            Link(to: '/', child: img(src: 'https://duxt.dev/images/logo.svg', alt: 'Duxt', classes: 'h-8')),
+            Link(to: '/', child: img(src: 'https://duxt.dev/images/logo.svg', alt: 'Duxt', classes: '!h-7 !w-auto max-h-7')),
             nav(classes: 'flex items-center gap-6', [
-              Link(to: '/', child: span(classes: 'text-sm text-gray-300 hover:text-white', [Component.text('Home')])),
-              Link(to: '/docs', child: span(classes: 'text-sm text-gray-300 hover:text-white', [Component.text('Docs')])),
-              Link(to: '/blog', child: span(classes: 'text-sm text-gray-300 hover:text-white', [Component.text('Blog')])),
-              Link(to: '/showcase', child: span(classes: 'text-sm text-gray-300 hover:text-white', [Component.text('Showcase')])),
-              Link(to: '/about', child: span(classes: 'text-sm text-gray-300 hover:text-white', [Component.text('About')])),
+              Link(to: '/', child: span(classes: 'text-sm text-gray-300 hover:text-white transition-colors', [Component.text('Home')])),
+              Link(to: '/docs', child: span(classes: 'text-sm text-gray-300 hover:text-white transition-colors', [Component.text('Docs')])),
+              Link(to: '/blog', child: span(classes: 'text-sm text-gray-300 hover:text-white transition-colors', [Component.text('Blog')])),
+              Link(to: '/showcase', child: span(classes: 'text-sm text-gray-300 hover:text-white transition-colors', [Component.text('Showcase')])),
+              Link(to: '/about', child: span(classes: 'text-sm text-gray-300 hover:text-white transition-colors', [Component.text('About')])),
             ]),
           ]),
         ]),
       ]),
-      child,
-      footer(classes: 'fixed bottom-0 left-0 right-0 z-50 bg-transparent', [
-        div(classes: 'max-w-7xl mx-auto px-4 py-4 text-center', [
+      div(classes: 'flex-1', [child]),
+      footer(classes: 'bg-gray-900 border-t border-gray-800 py-6', [
+        div(classes: 'max-w-7xl mx-auto px-4 text-center', [
           DCopyright(text: 'Built with Duxt'),
         ]),
       ]),
@@ -55,10 +55,10 @@ class DefaultPageLayout extends PageLayoutBase {
     final pageData = page.data.page;
     final title = pageData['title'] as String? ?? 'Untitled';
 
-    return div(classes: 'min-h-screen bg-gradient-to-b from-gray-900 to-gray-950 pt-24 pb-20 px-4', [
+    return div(classes: 'py-12 px-4', [
       div(classes: 'max-w-3xl mx-auto', [
         h1(classes: 'text-4xl font-bold text-white mb-8', [Component.text(title)]),
-        div(classes: 'prose prose-invert max-w-none', [child]),
+        div(classes: 'prose prose-invert prose-lg max-w-none [&_p]:!text-gray-100 [&_h1]:!text-cyan-400 [&_h2]:!text-cyan-400 [&_h3]:!text-cyan-400 [&_h4]:!text-white [&_a]:!text-cyan-400 [&_strong]:!text-white [&_code]:!text-cyan-300 [&_code]:bg-gray-800 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_pre]:bg-gray-800 [&_li]:!text-gray-100', [child]),
       ]),
     ]);
   }

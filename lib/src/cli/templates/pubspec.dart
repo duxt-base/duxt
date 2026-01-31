@@ -11,7 +11,7 @@ environment:
 dependencies:
   jaspr: ^0.22.1
   jaspr_router: ^0.8.1
-  duxt: ^0.3.8
+  duxt: ^0.3.9
   duxt_ui: ^0.2.3
   duxt_orm: ^0.1.0
   sqlite3: ^2.4.0

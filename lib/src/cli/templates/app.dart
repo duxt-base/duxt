@@ -2,19 +2,25 @@
 const appTemplate = r'''
 import 'package:jaspr/jaspr.dart';
 import 'package:jaspr_router/jaspr_router.dart';
+import 'package:duxt/content.dart';
 
 // Generated routes
 import '.generated/routes.dart' as generated;
 
 // Shared
 import 'shared/layouts/default.dart';
+import 'shared/layouts/page.dart';
 
 class App extends StatelessComponent {
   const App({super.key});
 
   @override
   Component build(BuildContext context) {
-    final routes = generated.generatedRoutes();
+    final routes = generated.generatedRoutes(
+      config: DuxtPageConfig(
+        layouts: [const DefaultPageLayout()],
+      ),
+    );
 
     final wrappedRoutes = routes.map((route) => Route(
       path: route.path,
