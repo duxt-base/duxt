@@ -54,3 +54,4 @@ library;
 
 export 'src/content/content.dart';
 export 'src/content/duxt_content_app.dart';
+export 'src/core/duxt_content_page.dart';

@@ -6,57 +6,120 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
 /// Development server for Duxt
-/// Proxies to Jaspr dev server and handles API routes
+/// Proxies to Jaspr dev server and API server
 class DevServer {
   final String projectDir;
   final int port;
+  late final int apiPort;
+  late final int jasprPort;
 
   HttpServer? _server;
   Process? _jasprProcess;
+  Process? _apiProcess;
 
-  DevServer(this.projectDir, this.port);
+  DevServer(this.projectDir, this.port, {int? apiPort}) {
+    this.apiPort = apiPort ?? (port + 1);
+    jasprPort = port + 100; // Use separate range to avoid conflicts
+  }
 
   Future<void> start() async {
-    // Start Jaspr dev server on a different port
-    final jasprPort = port + 1;
+    print('');
+    print('\x1B[36m╭───────────────────────────────────────╮\x1B[0m');
+    print('\x1B[36m│\x1B[0m  \x1B[1mDuxt Development Server\x1B[0m             \x1B[36m│\x1B[0m');
+    print('\x1B[36m╰───────────────────────────────────────╯\x1B[0m');
+    print('');
+
+    // 1. Start API server
+    print('\x1B[36m→\x1B[0m Starting API server on port $apiPort...');
+    final serverFile = File(p.join(projectDir, 'server', 'main.dart'));
+    if (serverFile.existsSync()) {
+      _apiProcess = await Process.start(
+        'dart',
+        ['run', 'server/main.dart'],
+        workingDirectory: projectDir,
+        environment: {'PORT': apiPort.toString()},
+      );
+
+      // Forward API server output with prefix
+      _apiProcess!.stdout.transform(utf8.decoder).listen((data) {
+        for (final line in data.split('\n')) {
+          if (line.trim().isNotEmpty) {
+            print('\x1B[33m[api]\x1B[0m $line');
+          }
+        }
+      });
+
+      _apiProcess!.stderr.transform(utf8.decoder).listen((data) {
+        for (final line in data.split('\n')) {
+          if (line.trim().isNotEmpty) {
+            stderr.writeln('\x1B[31m[api]\x1B[0m $line');
+          }
+        }
+      });
+
+      // Wait for API server to start
+      await Future.delayed(const Duration(seconds: 2));
+      print('  \x1B[32m✓\x1B[0m API server started');
+    } else {
+      print('  \x1B[33m⚠\x1B[0m No server/main.dart found, API routes disabled');
+    }
+
+    // 2. Start Jaspr dev server
+    print('\x1B[36m→\x1B[0m Starting Jaspr dev server on port $jasprPort...');
 
     // Find jaspr CLI
     final home = Platform.environment['HOME'] ?? '';
     final jasprCli = '$home/.pub-cache/bin/jaspr';
     final jasprCmd = File(jasprCli).existsSync() ? jasprCli : 'jaspr';
 
-    // Start jaspr serve in the background
     _jasprProcess = await Process.start(
       jasprCmd,
       ['serve', '--port', jasprPort.toString()],
       workingDirectory: projectDir,
     );
 
-    // Forward jaspr output
+    // Forward jaspr output with prefix
     _jasprProcess!.stdout.transform(utf8.decoder).listen((data) {
-      stdout.write(data);
+      for (final line in data.split('\n')) {
+        if (line.trim().isNotEmpty) {
+          print('\x1B[35m[web]\x1B[0m $line');
+        }
+      }
     });
 
     _jasprProcess!.stderr.transform(utf8.decoder).listen((data) {
-      stderr.write(data);
+      for (final line in data.split('\n')) {
+        if (line.trim().isNotEmpty) {
+          stderr.writeln('\x1B[31m[web]\x1B[0m $line');
+        }
+      }
     });
 
-    // Wait a bit for Jaspr to start
-    await Future.delayed(const Duration(seconds: 2));
+    // Wait for Jaspr to start
+    await Future.delayed(const Duration(seconds: 3));
+    print('  \x1B[32m✓\x1B[0m Jaspr dev server started');
 
-    // Create middleware pipeline
+    // 3. Create middleware pipeline
     final handler = const shelf.Pipeline()
         .addMiddleware(_logRequests())
         .addMiddleware(_cors())
-        .addHandler(_handleRequest(jasprPort));
+        .addHandler(_handleRequest());
 
-    // Start our proxy server
+    // 4. Start proxy server
     _server = await shelf_io.serve(handler, 'localhost', port);
+
+    print('');
+    print('\x1B[32m✓\x1B[0m Dev server running at \x1B[1mhttp://localhost:$port\x1B[0m');
+    print('');
+    print('  \x1B[36mFrontend:\x1B[0m http://localhost:$port');
+    print('  \x1B[36mAPI:\x1B[0m      http://localhost:$port/api/*');
+    print('');
   }
 
   Future<void> stop() async {
     await _server?.close();
     _jasprProcess?.kill();
+    _apiProcess?.kill();
   }
 
   shelf.Middleware _logRequests() {
@@ -107,7 +170,7 @@ class DevServer {
     'Access-Control-Allow-Headers': 'Origin, Content-Type, Accept, Authorization',
   };
 
-  shelf.Handler _handleRequest(int jasprPort) {
+  shelf.Handler _handleRequest() {
     return (shelf.Request request) async {
       final path = request.url.path;
 
@@ -117,41 +180,65 @@ class DevServer {
       }
 
       // Proxy to Jaspr dev server
-      return _proxyToJaspr(request, jasprPort);
+      return _proxyToJaspr(request);
     };
   }
 
   Future<shelf.Response> _handleApiRoute(shelf.Request request) async {
-    final path = request.url.path;
-    final apiPath = path.substring(4); // Remove 'api/'
-
-    // Find the API handler file
-    final handlerFile = File(p.join(projectDir, 'server', 'api', '$apiPath.dart'));
-
-    if (!handlerFile.existsSync()) {
-      // Try index.dart in directory
-      final indexFile = File(p.join(projectDir, 'server', 'api', apiPath, 'index.dart'));
-      if (!indexFile.existsSync()) {
-        return shelf.Response.notFound(
-          jsonEncode({'error': 'API route not found: $path'}),
-          headers: {'Content-Type': 'application/json'},
-        );
-      }
-    }
-
-    // For now, return a placeholder
-    // In production, this would dynamically load and execute the handler
-    return shelf.Response.ok(
-      jsonEncode({
-        'message': 'API route: $path',
-        'method': request.method,
-        'note': 'Dynamic API handlers coming soon',
-      }),
-      headers: {'Content-Type': 'application/json'},
-    );
+    // Proxy to API server
+    return _proxyToApi(request);
   }
 
-  Future<shelf.Response> _proxyToJaspr(shelf.Request request, int jasprPort) async {
+  Future<shelf.Response> _proxyToApi(shelf.Request request) async {
+    try {
+      final client = HttpClient();
+      final uri = Uri.parse('http://localhost:$apiPort/${request.url}');
+
+      final proxyRequest = await client.openUrl(request.method, uri);
+
+      // Copy headers
+      request.headers.forEach((name, value) {
+        if (name.toLowerCase() != 'host') {
+          proxyRequest.headers.set(name, value);
+        }
+      });
+      proxyRequest.headers.set('host', 'localhost:$apiPort');
+
+      // Copy body if present
+      if (request.method == 'POST' ||
+          request.method == 'PUT' ||
+          request.method == 'PATCH') {
+        final body = await request.read().toList();
+        for (final chunk in body) {
+          proxyRequest.add(chunk);
+        }
+      }
+
+      final proxyResponse = await proxyRequest.close();
+
+      // Read response body
+      final responseBody = await proxyResponse.transform(utf8.decoder).join();
+
+      // Convert headers
+      final headers = <String, String>{};
+      proxyResponse.headers.forEach((name, values) {
+        headers[name] = values.join(',');
+      });
+
+      return shelf.Response(
+        proxyResponse.statusCode,
+        body: responseBody,
+        headers: headers,
+      );
+    } catch (e) {
+      return shelf.Response.internalServerError(
+        body: jsonEncode({'error': 'Error connecting to API server: $e'}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
+  }
+
+  Future<shelf.Response> _proxyToJaspr(shelf.Request request) async {
     try {
       final client = HttpClient();
       final uri = Uri.parse('http://localhost:$jasprPort/${request.url}');

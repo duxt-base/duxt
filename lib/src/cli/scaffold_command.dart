@@ -31,6 +31,7 @@ class ScaffoldCommand extends Command<int> {
   ScaffoldCommand() {
     argParser.addFlag('force', abbr: 'f', help: 'Overwrite existing files');
     argParser.addFlag('api-only', help: 'Only generate model and API');
+    argParser.addFlag('orm', help: 'Generate DuxtOrm server model with schema');
   }
 
   @override
@@ -48,6 +49,7 @@ class ScaffoldCommand extends Command<int> {
     final fields = _parseFields(argResults!.rest.skip(1).toList());
     final force = argResults!['force'] as bool;
     final apiOnly = argResults!['api-only'] as bool;
+    final useOrm = argResults!['orm'] as bool;
     final projectDir = Directory.current.path;
 
     print('');
@@ -78,6 +80,20 @@ class ScaffoldCommand extends Command<int> {
       // 2. Generate API
       await _generateApi(moduleDir, singularClass, moduleName);
       print('  \x1B[32m✓\x1B[0m api.dart');
+
+      // 2b. Generate ORM Model (server-side)
+      if (useOrm) {
+        final serverDir = p.join(projectDir, 'server', 'models');
+        await Directory(serverDir).create(recursive: true);
+        await _generateOrmModel(serverDir, singularClass, moduleName, fields);
+        print('  \x1B[32m✓\x1B[0m server/models/${singular}.dart (DuxtOrm)');
+
+        // Generate server routes
+        final routesDir = p.join(projectDir, 'server', 'api');
+        await Directory(routesDir).create(recursive: true);
+        await _generateOrmRoutes(routesDir, singularClass, moduleName, singular, fields);
+        print('  \x1B[32m✓\x1B[0m server/api/$moduleName.dart (routes)');
+      }
 
       if (!apiOnly) {
         // 3. Generate List Page
@@ -163,8 +179,12 @@ class ScaffoldCommand extends Command<int> {
     final paramFields = allFields.map((f) => '  final ${f.type}${f.name == 'id' ? '' : '?'} ${f.name};').join('\n');
     final constructorParams = allFields.map((f) =>
       f.name == 'id' ? 'required this.id' : 'this.${f.name}').join(', ');
-    final fromJsonFields = allFields.map((f) =>
-      "      ${f.name}: json['${f.name}'] as ${f.type}${f.name == 'id' ? '' : '?'},").join('\n');
+    final fromJsonFields = allFields.map((f) {
+      if (f.name == 'id') {
+        return "      id: json['id'].toString(),";
+      }
+      return "      ${f.name}: json['${f.name}'] as ${f.type}?,";
+    }).join('\n');
     final toJsonFields = allFields.map((f) =>
       "      '${f.name}': ${f.name},").join('\n');
 
@@ -211,7 +231,8 @@ import 'model.dart';
 class ${className}Api {
   static Future<List<$className>> getAll() async {
     final data = await Api.get('/$moduleName');
-    return $className.fromList(data as List);
+    final list = data is Map ? data['$moduleName'] as List : data as List;
+    return $className.fromList(list);
   }
 
   static Future<$className> getOne(String id) async {
@@ -285,7 +306,7 @@ class _${pluralClass}ListPageState extends DuxtState<${pluralClass}ListPage, Lis
         a(
           href: '/$moduleName/new',
           classes: 'px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700',
-          [text('New $className')],
+          [Component.text('New $className')],
         ),
       ]),
       // List
@@ -310,8 +331,8 @@ class _${pluralClass}ListPageState extends DuxtState<${pluralClass}ListPage, Lis
 
     final fieldDisplays = fields.map((f) => '''
           div(classes: 'py-4 border-b', [
-            dt(classes: 'text-sm text-gray-500', [text('${_toTitleCase(f.name)}')]),
-            dd(classes: 'mt-1 text-gray-900', [text('\${item.${f.name} ?? "-"}')]),
+            dt(classes: 'text-sm text-gray-500', [Component.text('${_toTitleCase(f.name)}')]),
+            dd(classes: 'mt-1 text-gray-900', [Component.text('\${item.${f.name} ?? "-"}')]),
           ]),''').join('\n');
 
     final content = '''
@@ -336,12 +357,12 @@ class _${pluralClass}DetailPageState extends DuxtState<${pluralClass}DetailPage,
 
   @override
   Component buildLoading() {
-    return div(classes: 'flex justify-center py-12', [text('Loading...')]);
+    return div(classes: 'flex justify-center py-12', [Component.text('Loading...')]);
   }
 
   @override
   Component buildError(Object error) {
-    return div(classes: 'text-red-600 py-12', [text('Error: \$error')]);
+    return div(classes: 'text-red-600 py-12', [Component.text('Error: \$error')]);
   }
 
   @override
@@ -356,15 +377,15 @@ class _${pluralClass}DetailPageState extends DuxtState<${pluralClass}DetailPage,
           a(
             href: '/$moduleName',
             classes: 'px-4 py-2 border rounded-lg hover:bg-gray-50',
-            [text('Back')],
+            [Component.text('Back')],
           ),
         ]),
       ]),
       // Details
       dl(classes: 'divide-y', [
         div(classes: 'py-4 border-b', [
-          dt(classes: 'text-sm text-gray-500', [text('ID')]),
-          dd(classes: 'mt-1 text-gray-900', [text(item.id)]),
+          dt(classes: 'text-sm text-gray-500', [Component.text('ID')]),
+          dd(classes: 'mt-1 text-gray-900', [Component.text(item.id)]),
         ]),
 $fieldDisplays
       ]),
@@ -398,7 +419,7 @@ class ${pluralClass}NewPage extends StatelessComponent {
         a(
           href: '/$moduleName',
           classes: 'px-4 py-2 border rounded-lg hover:bg-gray-50',
-          [text('Cancel')],
+          [Component.text('Cancel')],
         ),
       ]),
       // Form
@@ -474,7 +495,7 @@ $inputFields
           button(
             type: ButtonType.submit,
             classes: 'px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700',
-            [text('Save')],
+            [Component.text('Save')],
           ),
         ]),
       ],
@@ -483,6 +504,215 @@ $inputFields
 }
 ''';
     await File(p.join(moduleDir, 'components', '${singular}_form.dart')).writeAsString(content);
+  }
+
+  // ==================== ORM Model Generation ====================
+
+  Future<void> _generateOrmModel(String serverDir, String className, String moduleName, List<FieldDef> fields) async {
+    final singular = _singularize(moduleName);
+
+    // Build field declarations
+    final fieldDeclarations = fields.map((f) =>
+      '  ${f.type}? ${f.name};').join('\n');
+
+    // Build constructor params
+    final constructorParams = [
+      'int? id',
+      ...fields.map((f) => 'this.${f.name}'),
+      'this.createdAt',
+      'this.updatedAt',
+    ].join(', ');
+
+    // Build toMap
+    final toMapFields = fields.map((f) {
+      if (f.type == 'bool') {
+        return "      '${_toSnakeCase(f.name)}': ${f.name} == true ? 1 : 0,";
+      }
+      return "      '${_toSnakeCase(f.name)}': ${f.name},";
+    }).join('\n');
+
+    // Build fromRow
+    final fromRowFields = fields.map((f) {
+      final snakeName = _toSnakeCase(f.name);
+      if (f.type == 'bool') {
+        return "      ${f.name}: (row['$snakeName'] as int?) == 1,";
+      } else if (f.type == 'int') {
+        return "      ${f.name}: row['$snakeName'] as int?,";
+      } else if (f.type == 'double') {
+        return "      ${f.name}: (row['$snakeName'] as num?)?.toDouble(),";
+      }
+      return "      ${f.name}: row['$snakeName'] as ${f.type}?,";
+    }).join('\n');
+
+    // Build schema columns
+    final schemaColumns = fields.map((f) {
+      final snakeName = _toSnakeCase(f.name);
+      final colType = _dartTypeToColumn(f.type);
+      return "        '$snakeName': $colType,";
+    }).join('\n');
+
+    final content = '''
+import 'package:duxt_orm/duxt_orm.dart';
+
+class $className extends Model {
+  int? _id;
+$fieldDeclarations
+  DateTime? createdAt;
+  DateTime? updatedAt;
+
+  $className({$constructorParams}) : _id = id;
+
+  @override
+  dynamic get id => _id;
+
+  @override
+  set id(dynamic value) => _id = value as int?;
+
+  @override
+  Map<String, dynamic> toMap() => {
+$toMapFields
+    };
+
+  factory $className.fromRow(Map<String, dynamic> row) => $className(
+      id: row['id'] as int?,
+$fromRowFields
+      createdAt: row['created_at'] != null
+          ? DateTime.tryParse(row['created_at'] as String)
+          : null,
+      updatedAt: row['updated_at'] != null
+          ? DateTime.tryParse(row['updated_at'] as String)
+          : null,
+    );
+
+  Map<String, dynamic> toJson() => {
+      'id': _id,
+${fields.map((f) => "      '${f.name}': ${f.name},").join('\n')}
+      'createdAt': createdAt?.toIso8601String(),
+      'updatedAt': updatedAt?.toIso8601String(),
+    };
+
+  /// Register this model with DuxtOrm.
+  static void register() {
+    Model.registerModel<$className>(
+      $className.fromRow,
+      schema: {
+        'id': Column.integer().primaryKey().autoIncrement(),
+$schemaColumns
+        'created_at': Column.dateTime().nullable(),
+        'updated_at': Column.dateTime().nullable(),
+      },
+    );
+  }
+
+  @override
+  String toString() => '$className(id: \$_id${fields.isNotEmpty ? ', ${fields.first.name}: \$${fields.first.name}' : ''})';
+}
+''';
+    await File(p.join(serverDir, '$singular.dart')).writeAsString(content);
+  }
+
+  Future<void> _generateOrmRoutes(String routesDir, String className, String moduleName, String singular, List<FieldDef> fields) async {
+    final content = '''
+import 'package:duxt/server.dart';
+import 'package:duxt_orm/duxt_orm.dart';
+import '../models/$singular.dart';
+
+/// Register $moduleName API routes
+void register${className}Routes(DuxtServer server) {
+  // GET /api/$moduleName - List all
+  server.get('/api/$moduleName', (req) async {
+    final items = await Model.all<$className>();
+    return json({'$moduleName': items.map((e) => e.toJson()).toList()});
+  });
+
+  // GET /api/$moduleName/:id - Get one
+  server.get('/api/$moduleName/:id', (req) async {
+    final id = int.tryParse(req.params['id'] ?? '');
+    if (id == null) {
+      return json({'error': 'Invalid ID'}, statusCode: 400);
+    }
+
+    final item = await Model.find<$className>(id);
+    if (item == null) {
+      return json({'error': 'Not found'}, statusCode: 404);
+    }
+
+    return json({'$singular': item.toJson()});
+  });
+
+  // POST /api/$moduleName - Create
+  server.post('/api/$moduleName', (req) async {
+    final body = req.body as Map<String, dynamic>?;
+    if (body == null) {
+      return json({'error': 'Body required'}, statusCode: 400);
+    }
+
+    final item = $className.fromRow(body);
+    await item.save();
+
+    return json({'$singular': item.toJson()}, statusCode: 201);
+  });
+
+  // PUT /api/$moduleName/:id - Update
+  server.put('/api/$moduleName/:id', (req) async {
+    final id = int.tryParse(req.params['id'] ?? '');
+    if (id == null) {
+      return json({'error': 'Invalid ID'}, statusCode: 400);
+    }
+
+    final item = await Model.find<$className>(id);
+    if (item == null) {
+      return json({'error': 'Not found'}, statusCode: 404);
+    }
+
+    final body = req.body as Map<String, dynamic>?;
+    if (body != null) {
+${fields.map((f) => "      if (body.containsKey('${f.name}')) item.${f.name} = body['${f.name}'] as ${f.type}?;").join('\n')}
+    }
+
+    await item.save();
+    return json({'$singular': item.toJson()});
+  });
+
+  // DELETE /api/$moduleName/:id - Delete
+  server.delete('/api/$moduleName/:id', (req) async {
+    final id = int.tryParse(req.params['id'] ?? '');
+    if (id == null) {
+      return json({'error': 'Invalid ID'}, statusCode: 400);
+    }
+
+    final item = await Model.find<$className>(id);
+    if (item == null) {
+      return json({'error': 'Not found'}, statusCode: 404);
+    }
+
+    await item.destroy();
+    return json({'success': true});
+  });
+}
+''';
+    await File(p.join(routesDir, '$moduleName.dart')).writeAsString(content);
+  }
+
+  String _dartTypeToColumn(String dartType) {
+    switch (dartType) {
+      case 'int':
+        return 'Column.integer().nullable()';
+      case 'double':
+        return 'Column.decimal(10, 2).nullable()';
+      case 'bool':
+        return 'Column.boolean().defaultValue(false)';
+      case 'String':
+      default:
+        return 'Column.string(255).nullable()';
+    }
+  }
+
+  String _toSnakeCase(String s) {
+    return s.replaceAllMapped(
+      RegExp(r'([A-Z])'),
+      (m) => '_${m.group(1)!.toLowerCase()}',
+    );
   }
 
   // Helpers

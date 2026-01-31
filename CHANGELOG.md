@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.8] - 2026-01-31
+
+### Added
+- `--mode` flag for `duxt create` - Allows non-interactive project creation
+
+### Fixed
+- Template: Fixed `app.dart` - removed undefined `DefaultPageLayout()` call
+- Template: Fixed showcase page - changed `DTabs` to `DControlledTabs` with correct props
+- Template: Fixed `server/main.dart` - removed `staticDir` parameter not in published API
+- Documentation: Updated all dynamic route examples to use `_param_` syntax
+
+### Changed
+- Updated template dependencies to use latest duxt version
+
 ## [0.3.7] - 2026-01-30
 
 ### Added

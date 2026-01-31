@@ -16,10 +16,10 @@ import 'package:jaspr/jaspr.dart';
 ///   Future<List<Post>> load() => PostsApi.getAll();
 ///
 ///   @override
-///   Component buildLoading() => div([text('Loading...')]);
+///   Component buildLoading() => div([Component.text('Loading...')]);
 ///
 ///   @override
-///   Component buildError(Object e) => div([text('Error: $e')]);
+///   Component buildError(Object e) => div([Component.text('Error: $e')]);
 ///
 ///   @override
 ///   Component buildData(List<Post> posts) => PostList(posts: posts);
@@ -97,10 +97,10 @@ abstract class DuxtState<S extends StatefulComponent, T> extends State<S> {
 ///   };
 ///
 ///   @override
-///   Component buildLoading() => div([text('Loading...')]);
+///   Component buildLoading() => div([Component.text('Loading...')]);
 ///
 ///   @override
-///   Component buildError(Object e) => div([text('Error: $e')]);
+///   Component buildError(Object e) => div([Component.text('Error: $e')]);
 ///
 ///   @override
 ///   Component buildData(Map<String, dynamic> data) {

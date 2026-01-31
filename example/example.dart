@@ -87,21 +87,29 @@ class PostsApi {
 }
 
 /// Example of using AsyncData for standalone async state.
-void asyncDataExample() {
+Future<void> asyncDataExample() async {
   final postData = AsyncData<Post>();
 
-  // Load data
-  postData.load(() => PostsApi.getOne('1'));
+  // Set loading state
+  postData.setLoading();
 
   // Check state
-  if (postData.isLoading) {
+  if (postData.loading) {
     print('Loading...');
-  } else if (postData.hasError) {
+  }
+
+  // Load and set data
+  try {
+    final post = await PostsApi.getOne('1');
+    postData.setData(post);
+  } catch (e) {
+    postData.setError(e);
+  }
+
+  // Check result
+  if (postData.hasError) {
     print('Error: ${postData.error}');
   } else if (postData.hasData) {
     print('Post: ${postData.data!.title}');
   }
-
-  // Reload
-  postData.reload();
 }

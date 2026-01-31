@@ -1,6 +1,6 @@
 name: duxt
 description: A meta-framework for Jaspr with module-based architecture, file-based routing, layouts, and scaffold generators.
-version: 0.3.7
+version: 0.3.8
 homepage: https://duxt.dev
 repository: https://github.com/duxt-base/duxt
 issue_tracker: https://github.com/duxt-base/duxt/issues
@@ -24,8 +24,18 @@ dependencies:
   markdown: ^7.3.0
 
 dev_dependencies:
-  lints: ^6.0.0
+  lints: ^6.1.0
   test: ^1.24.0
+
+# dependency_overrides:
+#   jaspr:
+#     path: ../jaspr/packages/jaspr
+#   jaspr_builder:
+#     path: ../jaspr/packages/jaspr_builder
+#   jaspr_content:
+#     path: ../jaspr/packages/jaspr_content
+#   jaspr_router:
+#     path: ../jaspr/packages/jaspr_router
 
 executables:
   duxt: duxt

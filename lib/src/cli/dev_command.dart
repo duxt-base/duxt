@@ -3,11 +3,15 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
+import 'package:shelf/shelf.dart' as shelf;
+import 'package:shelf/shelf_io.dart' as shelf_io;
+import 'package:yaml/yaml.dart';
 import '../core/router_generator.dart';
 import '../core/watcher.dart';
 
 /// Command to start development server
-/// Usage: duxt dev [--port=4000] [--api-port=3001]
+/// Usage: duxt dev [--port=4000]
+/// Ports are auto-incremented: proxy=port, api=port+1, jaspr=port+2, webdev=port+3
 class DevCommand extends Command<int> {
   @override
   final name = 'dev';
@@ -20,25 +24,29 @@ class DevCommand extends Command<int> {
       'port',
       abbr: 'p',
       defaultsTo: '4000',
-      help: 'Port for Jaspr server',
-    );
-    argParser.addOption(
-      'api-port',
-      defaultsTo: '3001',
-      help: 'Port for API server',
+      help: 'Base port (api=+1, jaspr=+2, webdev=+3)',
     );
     argParser.addFlag(
       'no-api',
       defaultsTo: false,
       help: 'Skip starting the API server',
     );
+    argParser.addFlag(
+      'verbose',
+      abbr: 'v',
+      defaultsTo: false,
+      help: 'Show detailed build output',
+    );
   }
 
   @override
   Future<int> run() async {
-    final port = argResults!['port'] as String;
-    final apiPort = argResults!['api-port'] as String;
+    final port = int.parse(argResults!['port'] as String);
+    final apiPort = port + 1;
+    final jasprPort = port + 2;
+    final webdevPort = (port + 3).toString();
     final noApi = argResults!['no-api'] as bool;
+    final verbose = argResults!['verbose'] as bool;
     final projectDir = Directory.current.path;
 
     // Check if this is a Duxt project
@@ -49,9 +57,16 @@ class DevCommand extends Command<int> {
     }
 
     print('');
-    print('\x1B[36m╭─────────────────────────────────────╮\x1B[0m');
-    print('\x1B[36m│\x1B[0m  \x1B[1mDuxt\x1B[0m Development Server          \x1B[36m│\x1B[0m');
-    print('\x1B[36m╰─────────────────────────────────────╯\x1B[0m');
+    print('\x1B[36m               88\x1B[0m');
+    print('\x1B[36m               88\x1B[0m');
+    print('\x1B[36m      .d88888b 88  db       db  db        db d88888888b\x1B[0m');
+    print('\x1B[36m    .8P       Y88  88       88   `8b    d8\'      88\x1B[0m');
+    print('\x1B[36m    88         88  88       88     `8bd8\'        88\x1B[0m');
+    print('\x1B[36m    88         88  88       88     .dPYb.        88\x1B[0m');
+    print('\x1B[36m    `8L       d89  88b     d88   .8P    Y8.      88\x1B[0m');
+    print('\x1B[36m     `Y888888P8J    ~Y88888\'88  dP        Yb     `Y88P\x1B[0m');
+    print('');
+    print('\x1B[36m                     oooooooooooooooooooo\x1B[0m');
     print('');
 
     // Run pub get if needed
@@ -79,6 +94,11 @@ class DevCommand extends Command<int> {
       print('  \x1B[33m!\x1B[0m Tailwind compilation skipped (tailwindcss not found)');
     }
 
+    // Kill stale build daemons that may be holding ports
+    print('\x1B[90m→\x1B[0m Cleaning up stale processes...');
+    await Process.run('pkill', ['-f', 'build_runner']);
+    await Future.delayed(const Duration(milliseconds: 500));
+
     // Generate routes
     print('\x1B[90m→\x1B[0m Generating routes...');
     await RouterGenerator.generate(projectDir);
@@ -96,77 +116,161 @@ class DevCommand extends Command<int> {
     Process? apiProcess;
     Process? jasprProcess;
     Process? tailwindProcess;
+    HttpServer? proxyServer;
+
+    final hasApi = !noApi && File('$projectDir/server/main.dart').existsSync();
 
     // Start API server if server/main.dart exists
-    if (!noApi && File('$projectDir/server/main.dart').existsSync()) {
-      print('\x1B[90m→\x1B[0m Starting API server...');
+    if (hasApi) {
+      print('\x1B[90m→\x1B[0m Starting API server on port $apiPort...');
       apiProcess = await Process.start(
         'dart',
         ['run', 'server/main.dart'],
         workingDirectory: projectDir,
-        environment: {'PORT': apiPort},
+        environment: {'PORT': apiPort.toString()},
       );
 
       apiProcess.stdout.listen((data) {
         final output = utf8.decode(data).trim();
-        if (output.isNotEmpty) print('\x1B[35m[API]\x1B[0m $output');
+        for (final line in output.split('\n')) {
+          if (line.trim().isNotEmpty) print('\x1B[35m[api]\x1B[0m $line');
+        }
       });
       apiProcess.stderr.listen((data) {
         final output = utf8.decode(data).trim();
-        if (output.isNotEmpty) print('\x1B[31m[API]\x1B[0m $output');
+        for (final line in output.split('\n')) {
+          if (line.trim().isNotEmpty) print('\x1B[31m[api]\x1B[0m $line');
+        }
       });
+
+      // Wait for API to start
+      await Future.delayed(const Duration(seconds: 2));
     }
 
     // Start Tailwind in watch mode
     if (tailwindOk) {
       print('\x1B[90m→\x1B[0m Starting Tailwind watcher...');
-      tailwindProcess = await _startTailwindWatch(projectDir);
+      tailwindProcess = await _startTailwindWatch(projectDir, verbose: verbose);
     }
 
-    // Start jaspr serve
-    print('\x1B[90m→\x1B[0m Starting Jaspr server...');
+    // Start jaspr serve on internal port
+    print('\x1B[90m→\x1B[0m Starting Jaspr server on port $jasprPort...');
 
+    // Check for local jaspr first (for development), then fall back to global
     final home = Platform.environment['HOME'] ?? '';
-    final jasprPath = '$home/.pub-cache/bin/jaspr';
+    final localJasprBin = p.join(p.dirname(projectDir), 'jaspr', 'packages', 'jaspr_cli', 'bin', 'jaspr.dart');
+    final globalJasprPath = '$home/.pub-cache/bin/jaspr';
 
-    if (!File(jasprPath).existsSync()) {
-      print('\x1B[33m!\x1B[0m jaspr_cli not found, installing...');
-      await Process.run('dart', ['pub', 'global', 'activate', 'jaspr_cli']);
+    String jasprCmd;
+    List<String> jasprArgs;
+
+    if (File(localJasprBin).existsSync()) {
+      // Use local jaspr via dart run
+      print('  \x1B[90mUsing local jaspr\x1B[0m');
+      jasprCmd = 'dart';
+      jasprArgs = ['run', localJasprBin, 'serve', '--port', jasprPort.toString(), '--web-port', webdevPort];
+    } else {
+      // Use global jaspr
+      if (!File(globalJasprPath).existsSync()) {
+        print('\x1B[33m!\x1B[0m jaspr_cli not found, installing...');
+        await Process.run('dart', ['pub', 'global', 'activate', 'jaspr_cli']);
+      }
+      jasprCmd = globalJasprPath;
+      jasprArgs = ['serve', '--port', jasprPort.toString(), '--web-port', webdevPort];
     }
 
     jasprProcess = await Process.start(
-      jasprPath,
-      ['serve', '--port', port],
+      jasprCmd,
+      jasprArgs,
       workingDirectory: projectDir,
     );
 
-    var hasShownReady = false;
+    // Track build state for spinner and ready state
+    var isBuilding = false;
+    var buildSpinner = _Spinner('Building');
+    final jasprReady = Completer<void>();
 
     jasprProcess.stdout.listen((data) {
       final output = utf8.decode(data).trim();
-      if (output.isNotEmpty) {
-        print('\x1B[34m[JASPR]\x1B[0m $output');
+      for (final line in output.split('\n')) {
+        if (line.trim().isEmpty) continue;
 
-        // Show ready message only after jaspr reports it's serving
-        if (!hasShownReady && output.contains('Serving at')) {
-          hasShownReady = true;
-          print('');
-          print('\x1B[32m✓\x1B[0m Ready!');
-          print('');
-          print('  \x1B[1mApp:\x1B[0m  \x1B[36mhttp://localhost:$port\x1B[0m');
-          if (apiProcess != null) {
-            print('  \x1B[1mAPI:\x1B[0m  \x1B[36mhttp://localhost:$apiPort\x1B[0m');
+        if (verbose) {
+          print('\x1B[34m[web]\x1B[0m $line');
+        } else {
+          // Show spinner during build, only print important messages
+          if (line.contains('Starting web compiler') || line.contains('Building web assets')) {
+            if (!isBuilding) {
+              isBuilding = true;
+              buildSpinner.start();
+            }
+          } else if (line.contains('Done building web assets')) {
+            if (isBuilding) {
+              buildSpinner.stop();
+              isBuilding = false;
+            }
+          } else if (line.contains('[ERROR]') || line.contains('Error')) {
+            buildSpinner.stop();
+            isBuilding = false;
+            print('\x1B[31m[web]\x1B[0m $line');
           }
-          print('');
-          print('\x1B[90mPress Ctrl+C to stop\x1B[0m');
-          print('');
+        }
+
+        // Signal ready when server is serving
+        if (line.contains('Serving at') && !jasprReady.isCompleted) {
+          jasprReady.complete();
         }
       }
     });
     jasprProcess.stderr.listen((data) {
       final output = utf8.decode(data).trim();
-      if (output.isNotEmpty) print('\x1B[31m[JASPR]\x1B[0m $output');
+      for (final line in output.split('\n')) {
+        if (line.trim().isEmpty) continue;
+        // Always show errors
+        if (line.contains('[ERROR]') || verbose) {
+          buildSpinner.stop();
+          isBuilding = false;
+          print('\x1B[31m[web]\x1B[0m $line');
+        }
+      }
     });
+
+    // Wait for Jaspr to actually be ready (with timeout fallback)
+    await jasprReady.future.timeout(
+      const Duration(seconds: 120),
+      onTimeout: () => print('\x1B[33m!\x1B[0m Jaspr taking longer than expected...'),
+    );
+
+    // Start proxy server on main port
+    final handler = const shelf.Pipeline()
+        .addMiddleware(_corsMiddleware())
+        .addHandler((request) => _proxyHandler(request, apiPort, jasprPort, hasApi));
+
+    proxyServer = await shelf_io.serve(handler, 'localhost', port);
+
+    // Detect project mode
+    final mode = _detectMode(projectDir);
+    final modeLabel = _getModeLabel(mode);
+    final modeColor = _getModeColor(mode);
+
+    print('\x1B[32m✓\x1B[0m Ready!');
+    print('');
+    print('  \x1B[1mApp:\x1B[0m    \x1B[36mhttp://localhost:$port\x1B[0m');
+    if (hasApi) {
+      print('  \x1B[1mAPI:\x1B[0m    \x1B[36mhttp://localhost:$port/api\x1B[0m');
+    }
+    print('  \x1B[1mMode:\x1B[0m   $modeColor$modeLabel\x1B[0m');
+    print('');
+    print('\x1B[90mPorts:\x1B[0m');
+    print('  \x1B[90mProxy:\x1B[0m  $port');
+    if (hasApi) {
+      print('  \x1B[90mAPI:\x1B[0m    $apiPort');
+    }
+    print('  \x1B[90mJaspr:\x1B[0m  $jasprPort');
+    print('  \x1B[90mWebdev:\x1B[0m $webdevPort');
+    print('');
+    print('\x1B[90mPress Ctrl+C to stop\x1B[0m');
+    print('');
 
     // Keep running until interrupted
     await ProcessSignal.sigint.watch().first;
@@ -174,12 +278,97 @@ class DevCommand extends Command<int> {
     print('');
     print('\x1B[90mShutting down...\x1B[0m');
 
+    await proxyServer.close();
     await watcher.stop();
     tailwindProcess?.kill();
     apiProcess?.kill();
     jasprProcess.kill();
 
     return 0;
+  }
+
+  /// CORS middleware
+  shelf.Middleware _corsMiddleware() {
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+      'Access-Control-Allow-Headers': 'Origin, Content-Type, Accept, Authorization',
+    };
+
+    return (shelf.Handler innerHandler) {
+      return (shelf.Request request) async {
+        if (request.method == 'OPTIONS') {
+          return shelf.Response.ok('', headers: corsHeaders);
+        }
+        final response = await innerHandler(request);
+        return response.change(headers: corsHeaders);
+      };
+    };
+  }
+
+  /// Proxy handler that routes /api/* to API server and rest to Jaspr
+  Future<shelf.Response> _proxyHandler(
+    shelf.Request request,
+    int apiPort,
+    int jasprPort,
+    bool hasApi,
+  ) async {
+    final path = request.url.path;
+    final targetPort = (hasApi && path.startsWith('api/')) ? apiPort : jasprPort;
+
+    try {
+      final client = HttpClient();
+      final uri = Uri.parse('http://localhost:$targetPort/${request.url}');
+
+      final proxyRequest = await client.openUrl(request.method, uri);
+
+      // Copy headers
+      request.headers.forEach((name, value) {
+        if (name.toLowerCase() != 'host') {
+          proxyRequest.headers.set(name, value);
+        }
+      });
+
+      // Copy body if present
+      if (['POST', 'PUT', 'PATCH'].contains(request.method)) {
+        final body = await request.read().toList();
+        for (final chunk in body) {
+          proxyRequest.add(chunk);
+        }
+      }
+
+      final proxyResponse = await proxyRequest.close();
+
+      // Read response body as bytes to handle binary content
+      final responseBytes = await proxyResponse.fold<List<int>>(
+        <int>[],
+        (previous, chunk) => previous..addAll(chunk),
+      );
+
+      // Convert headers, but skip content-encoding since HttpClient auto-decompresses
+      final headers = <String, String>{};
+      proxyResponse.headers.forEach((name, values) {
+        // HttpClient automatically decompresses gzip, so don't forward that header
+        if (name.toLowerCase() != 'content-encoding') {
+          headers[name] = values.join(',');
+        }
+      });
+
+      return shelf.Response(
+        proxyResponse.statusCode,
+        body: responseBytes,
+        headers: headers,
+      );
+    } catch (e) {
+      final isApi = path.startsWith('api/');
+      return shelf.Response.internalServerError(
+        body: jsonEncode({
+          'error': 'Proxy error: $e',
+          'target': isApi ? 'API server' : 'Jaspr server',
+        }),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
   }
 
   /// Compile Tailwind CSS once
@@ -227,7 +416,7 @@ class DevCommand extends Command<int> {
   }
 
   /// Start Tailwind in watch mode
-  Future<Process?> _startTailwindWatch(String projectDir) async {
+  Future<Process?> _startTailwindWatch(String projectDir, {bool verbose = false}) async {
     final process = await Process.start(
       'tailwindcss',
       [
@@ -241,12 +430,24 @@ class DevCommand extends Command<int> {
     process.stdout.listen((data) {
       final output = utf8.decode(data).trim();
       if (output.isNotEmpty && !output.contains('tailwindcss v')) {
-        print('\x1B[35m[TW]\x1B[0m $output');
+        if (verbose) {
+          print('\x1B[35m[tw]\x1B[0m $output');
+        }
+        // Silently rebuild CSS in non-verbose mode
       }
     });
     process.stderr.listen((data) {
       final output = utf8.decode(data).trim();
-      if (output.isNotEmpty) print('\x1B[31m[TW]\x1B[0m $output');
+      if (output.isEmpty) return;
+
+      // In non-verbose mode, only show actual errors (not status messages)
+      final isStatusMsg = output.contains('Done in') || output.contains('tailwindcss v');
+      if (verbose) {
+        print('\x1B[31m[tw]\x1B[0m $output');
+      } else if (!isStatusMsg) {
+        // Only print if it looks like a real error
+        print('\x1B[31m[tw]\x1B[0m $output');
+      }
     });
 
     return process;
@@ -319,5 +520,76 @@ class DevCommand extends Command<int> {
         await entity.copy(targetPath);
       }
     }
+  }
+
+  /// Detect jaspr mode from pubspec.yaml
+  String _detectMode(String projectDir) {
+    final pubspecFile = File(p.join(projectDir, 'pubspec.yaml'));
+    if (!pubspecFile.existsSync()) return 'unknown';
+
+    try {
+      final content = pubspecFile.readAsStringSync();
+      final yaml = loadYaml(content);
+
+      if (yaml is YamlMap && yaml['jaspr'] is YamlMap) {
+        final jasprConfig = yaml['jaspr'] as YamlMap;
+        return jasprConfig['mode']?.toString() ?? 'auto';
+      }
+    } catch (_) {}
+
+    return 'auto';
+  }
+
+  /// Get human-readable label for mode
+  String _getModeLabel(String mode) {
+    switch (mode) {
+      case 'client':
+        return 'Client-side (SPA)';
+      case 'server':
+        return 'Server-side (SSR)';
+      case 'static':
+        return 'Static (SSG)';
+      case 'auto':
+        return 'Auto-detect';
+      default:
+        return mode;
+    }
+  }
+
+  /// Get ANSI color for mode
+  String _getModeColor(String mode) {
+    switch (mode) {
+      case 'client':
+        return '\x1B[33m'; // Yellow
+      case 'server':
+        return '\x1B[35m'; // Magenta
+      case 'static':
+        return '\x1B[32m'; // Green
+      default:
+        return '\x1B[90m'; // Gray
+    }
+  }
+}
+
+/// Simple spinner for build progress
+class _Spinner {
+  final String message;
+  Timer? _timer;
+  int _frame = 0;
+  static const _frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+  _Spinner(this.message);
+
+  void start() {
+    _timer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+      stdout.write('\r\x1B[90m${_frames[_frame]}\x1B[0m $message...');
+      _frame = (_frame + 1) % _frames.length;
+    });
+  }
+
+  void stop() {
+    _timer?.cancel();
+    _timer = null;
+    stdout.write('\r\x1B[K'); // Clear the spinner line
   }
 }

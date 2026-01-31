@@ -347,7 +347,7 @@ class $className extends StatelessComponent {
     final paramFields = allParams.map((f) => '  final ${f.type} ${f.name};').join('\n');
     final constructorParams = allParams.map((f) => 'required this.${f.name}').join(', ');
     final displayFields = allParams.map((f) =>
-      "        p(classes: 'text-gray-600', [text('${f.name}: \$${f.name}')]),").join('\n');
+      "        p(classes: 'text-gray-600', [Component.text('${f.name}: \$${f.name}')]),").join('\n');
 
     return '''
 import 'package:jaspr/jaspr.dart';
@@ -413,7 +413,7 @@ $paramFields
   @override
   Component build(BuildContext context) {
     return div(classes: 'p-4 bg-white rounded-lg shadow', [
-${fields.map((f) => "      p([text('\$${f.name}')]),").join('\n')}
+${fields.map((f) => "      p([Component.text('\$${f.name}')]),").join('\n')}
     ]);
   }
 }
