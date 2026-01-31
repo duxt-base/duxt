@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.10] - 2026-01-31
+
+### Fixed
+- Template: app.dart now passes DuxtPageConfig with layouts to generatedRoutes()
+- Template: DefaultPageLayout uses proper prose styling with !important variants
+- Template: Readable text colors for all markdown elements (paragraphs, lists, headings)
+
 ## [0.3.9] - 2026-01-31
 
 ### Fixed
