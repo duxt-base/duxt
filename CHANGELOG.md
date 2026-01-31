@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.11] - 2026-01-31
+
+### Changed
+- Updated all documentation and examples to use `_id_` syntax instead of `[id]`
+- Scaffold command now generates `_id_.dart` files for dynamic routes
+
 ## [0.3.10] - 2026-01-31
 
 ### Fixed

@@ -62,8 +62,8 @@ my-app/
 │   ├── posts/                    # Feature module
 │   │   ├── pages/
 │   │   │   ├── index.dart        # -> /posts
-│   │   │   ├── [id].dart         # -> /posts/:id
-│   │   │   └── [id]/
+│   │   │   ├── _id_.dart         # -> /posts/:id
+│   │   │   └── _id_/
 │   │   │       └── edit.dart     # -> /posts/:id/edit
 │   │   ├── components/
 │   │   │   └── post_card.dart
@@ -139,7 +139,7 @@ duxt build --all-targets
 duxt g module posts
 
 # Page (with dynamic params)
-duxt g page posts/[id]
+duxt g page posts/_id_
 
 # Component (with props)
 duxt g component posts/card title:String author:String
@@ -173,7 +173,7 @@ Generates:
 
 ```bash
 duxt d module posts      # Delete entire module
-duxt d page posts/[id]   # Delete specific page
+duxt d page posts/_id_   # Delete specific page
 duxt d component posts/card
 ```
 

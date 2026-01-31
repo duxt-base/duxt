@@ -11,7 +11,7 @@ import 'package:path/path.dart' as p;
 /// lib/posts/
 ///   pages/
 ///     index.dart     (list page)
-///     [id].dart      (detail page)
+///     _id_.dart      (detail page)
 ///     new.dart       (create page)
 ///   components/
 ///     post_card.dart
@@ -102,7 +102,7 @@ class ScaffoldCommand extends Command<int> {
 
         // 4. Generate Detail Page
         await _generateDetailPage(moduleDir, moduleName, singularClass, fields);
-        print('  \x1B[32m✓\x1B[0m pages/[id].dart');
+        print('  \x1B[32m✓\x1B[0m pages/_id_.dart');
 
         // 5. Generate New Page
         await _generateNewPage(moduleDir, moduleName, singularClass, fields);
@@ -393,7 +393,7 @@ $fieldDisplays
   }
 }
 ''';
-    await File(p.join(moduleDir, 'pages', '[id].dart')).writeAsString(content);
+    await File(p.join(moduleDir, 'pages', '_id_.dart')).writeAsString(content);
   }
 
   Future<void> _generateNewPage(String moduleDir, String moduleName, String className, List<FieldDef> fields) async {

@@ -7,7 +7,7 @@ import 'package:path/path.dart' as p;
 ///
 /// Examples:
 ///   duxt g module posts
-///   duxt g page posts/[id]
+///   duxt g page posts/_id_
 ///   duxt g component posts/card title:String
 ///   duxt g model posts title:String content:String
 ///   duxt g api posts
@@ -84,7 +84,7 @@ class GCommand extends Command<int> {
     print('');
     print('Examples:');
     print('  duxt g module posts                     # Create posts module');
-    print('  duxt g page posts/[id]                  # Create posts/pages/[id].dart');
+    print('  duxt g page posts/_id_                  # Create posts/pages/_id_.dart');
     print('  duxt g component posts/card title:String');
     print('  duxt g model posts title:String content:String');
     print('  duxt g api posts                        # Create server/api/posts.dart');

@@ -8,9 +8,9 @@ enum RouteType { dart, content }
 ///
 /// Conventions:
 /// - lib/<module>/pages/index.dart -> /<module> (or / for "home" module)
-/// - lib/<module>/pages/[id].dart -> /<module>/:id
+/// - lib/<module>/pages/_id_.dart -> /<module>/:id
 /// - lib/<module>/pages/new.dart -> /<module>/new
-/// - lib/<module>/pages/[id]/edit.dart -> /<module>/:id/edit
+/// - lib/<module>/pages/_id_/edit.dart -> /<module>/:id/edit
 /// - lib/<module>/content/cli.md -> /<module>/cli (content route)
 /// - lib/<module>/content/sub/nested.md -> /<module>/sub/nested (content route)
 class RouterGenerator {
