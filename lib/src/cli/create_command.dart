@@ -15,6 +15,27 @@ enum ProjectMode {
   const ProjectMode(this.value, this.label, this.description);
 }
 
+/// Available project templates
+enum ProjectTemplate {
+  defaultTemplate('default', 'Default', 'Full-featured demo with all examples'),
+  minimal('minimal', 'Minimal', 'Clean starting point - just home page and layout'),
+  saas('saas', 'SaaS', 'SaaS starter with auth, dashboard, and billing'),
+  marketing('marketing', 'Marketing', 'Landing page with hero, features, and pricing'),
+  blog('blog', 'Blog', 'Professional blog with categories and SEO');
+
+  final String value;
+  final String label;
+  final String description;
+  const ProjectTemplate(this.value, this.label, this.description);
+
+  static ProjectTemplate fromValue(String value) {
+    return ProjectTemplate.values.firstWhere(
+      (t) => t.value == value,
+      orElse: () => ProjectTemplate.defaultTemplate,
+    );
+  }
+}
+
 /// Reserved package names that conflict with Dart/Flutter ecosystem packages
 const _reservedNames = {
   'web', // conflicts with dart:web
@@ -55,6 +76,13 @@ class CreateCommand extends Command<int> {
       'mode',
       abbr: 'm',
       help: 'Rendering mode (static, server, client)',
+      defaultsTo: null,
+    );
+    argParser.addOption(
+      'template',
+      abbr: 't',
+      help: 'Project template',
+      allowed: ProjectTemplate.values.map((t) => t.value).toList(),
       defaultsTo: null,
     );
   }
@@ -113,6 +141,55 @@ class CreateCommand extends Command<int> {
     print('  Creating project: \x1B[1m$projectName\x1B[0m');
     print('');
 
+    // Template selection
+    final templateArg = argResults!['template'] as String?;
+    String template;
+
+    if (templateArg != null) {
+      // Non-interactive mode with --template flag
+      final selected = ProjectTemplate.fromValue(templateArg);
+      if (selected == ProjectTemplate.saas) {
+        print('  \x1B[33m!\x1B[0m SaaS template requires duxt_auth (coming soon). Using Default instead.');
+        template = 'default';
+      } else {
+        template = selected.value;
+      }
+    } else {
+      // Interactive template selection
+      print('  Select a project template:');
+      print('');
+      for (var i = 0; i < ProjectTemplate.values.length; i++) {
+        final t = ProjectTemplate.values[i];
+        final isDisabled = t == ProjectTemplate.saas;
+        final marker = i == 0 ? '\x1B[32m>\x1B[0m' : ' ';
+        final color = isDisabled ? '\x1B[90m' : '';
+        final reset = isDisabled ? '\x1B[0m' : '';
+        final suffix = isDisabled ? ' (Coming Soon)' : '';
+        print('  $marker ${i + 1}. $color${t.label}$suffix$reset');
+        print('       $color${t.description}$reset');
+      }
+      print('');
+
+      stdout.write('  Enter choice [1]: ');
+      final input = stdin.readLineSync()?.trim() ?? '';
+      final choice = int.tryParse(input) ?? 1;
+
+      if (choice < 1 || choice > ProjectTemplate.values.length) {
+        print('\x1B[31mInvalid choice. Using Default template.\x1B[0m');
+      }
+
+      final selectedTemplate = ProjectTemplate.values[choice.clamp(1, ProjectTemplate.values.length) - 1];
+
+      // SaaS template requires duxt_auth
+      if (selectedTemplate == ProjectTemplate.saas) {
+        print('');
+        print('\x1B[33m!\x1B[0m SaaS template requires duxt_auth (coming soon). Using Default instead.');
+        template = 'default';
+      } else {
+        template = selectedTemplate.value;
+      }
+    }
+
     // Mode selection
     final modeArg = argResults!['mode'] as String?;
     String mode;
@@ -120,10 +197,9 @@ class CreateCommand extends Command<int> {
     if (modeArg != null) {
       // Non-interactive mode with --mode flag
       mode = 'static'; // Only static is supported for now
-      print('  Mode: \x1B[36m${ProjectMode.static.label}\x1B[0m');
-      print('');
     } else {
       // Interactive mode selection
+      print('');
       print('  Select rendering mode:');
       print('');
       for (var i = 0; i < ProjectMode.values.length; i++) {
@@ -154,13 +230,15 @@ class CreateCommand extends Command<int> {
       }
 
       mode = ProjectMode.static.value;
-      print('');
-      print('  Mode: \x1B[36m${ProjectMode.static.label}\x1B[0m');
-      print('');
     }
 
+    print('');
+    print('  Mode: \x1B[36m${ProjectMode.static.label}\x1B[0m');
+    print('  Template: \x1B[36m${ProjectTemplate.fromValue(template).label}\x1B[0m');
+    print('');
+
     try {
-      await TemplateGenerator.generate(projectName, projectDir.path, mode: mode);
+      await TemplateGenerator.generate(projectName, projectDir.path, mode: mode, template: template);
 
       print('');
       print('\x1B[32m✓\x1B[0m Project created successfully!');

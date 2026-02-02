@@ -8,15 +8,122 @@ import 'modules.dart';
 import 'blog.dart';
 import 'server.dart';
 import 'web.dart';
+import 'minimal.dart';
+import 'marketing.dart';
 
 /// Generates a new Duxt project from templates
 class TemplateGenerator {
-  static Future<void> generate(String projectName, String targetDir, {String mode = 'static'}) async {
+  static Future<void> generate(
+    String projectName,
+    String targetDir, {
+    String mode = 'static',
+    String template = 'default',
+  }) async {
     final dartName = projectName.replaceAll('-', '_').replaceAll(' ', '_');
 
+    switch (template) {
+      case 'minimal':
+        await MinimalTemplate.generate(dartName, targetDir, mode: mode);
+      case 'marketing':
+        await MarketingTemplate.generate(dartName, targetDir, mode: mode);
+      case 'blog':
+        await _generateBlog(dartName, targetDir, mode: mode);
+      default:
+        await _generateDefault(dartName, targetDir, mode: mode);
+    }
+  }
+
+  /// Default template - full-featured demo
+  static Future<void> _generateDefault(String projectName, String targetDir, {String mode = 'static'}) async {
     await _createDirectories(targetDir, mode: mode);
-    await _writeFiles(dartName, targetDir, mode: mode);
-    _printSuccess(dartName, mode: mode);
+    await _writeFiles(projectName, targetDir, mode: mode);
+    _printSuccess(projectName, mode: mode);
+  }
+
+  /// Blog template - focused blog with DuxtORM
+  static Future<void> _generateBlog(String projectName, String targetDir, {String mode = 'static'}) async {
+    await _createBlogDirectories(targetDir);
+    await _writeBlogFiles(projectName, targetDir, mode: mode);
+    _printBlogSuccess(projectName);
+  }
+
+  static Future<void> _createBlogDirectories(String targetDir) async {
+    final dirs = [
+      'lib', 'lib/.generated',
+      'lib/home/pages',
+      'lib/blog/pages',
+      'lib/shared/layouts',
+      'server', 'server/api', 'server/models',
+      'web',
+    ];
+
+    for (final dir in dirs) {
+      await Directory(p.join(targetDir, dir)).create(recursive: true);
+    }
+  }
+
+  static Future<void> _writeBlogFiles(String projectName, String dir, {required String mode}) async {
+    // Config files
+    await _write(dir, 'pubspec.yaml', pubspecTemplate(projectName, mode: mode));
+    await _write(dir, 'build.yaml', buildYamlTemplate);
+    await _write(dir, '.gitignore', gitignoreTemplate);
+
+    // App files (simplified for blog)
+    await _write(dir, 'lib/app.dart', _blogAppTemplate);
+    await _write(dir, 'lib/main.client.dart', mainClientTemplate);
+    if (mode == 'static' || mode == 'server') {
+      await _write(dir, 'lib/main.server.dart', mainServerTemplate(projectName));
+    }
+
+    // Layouts
+    await _write(dir, 'lib/shared/layouts/default.dart', _blogLayoutTemplate);
+
+    // Home module
+    await _write(dir, 'lib/home/pages/index.dart', _blogHomeTemplate(projectName));
+
+    // Blog module (fullstack with DuxtORM)
+    await _write(dir, 'lib/blog/pages/index.dart', blogIndexTemplate);
+    await _write(dir, 'lib/blog/pages/_slug_.dart', blogPostTemplate);
+
+    // Server (with DuxtORM)
+    await _write(dir, 'server/main.dart', serverMainTemplate);
+    await _write(dir, 'server/db.dart', dbTemplate);
+    await _write(dir, 'server/models/post.dart', postModelTemplate);
+    await _write(dir, 'server/api/posts.dart', postsApiTemplate);
+
+    // Web
+    await _write(dir, 'web/styles.tw.css', tailwindTemplate);
+    await _write(dir, 'web/main.client.dart', webMainClientTemplate(projectName));
+
+    // Docker
+    await _write(dir, 'Dockerfile', dockerfileTemplate);
+    await _write(dir, '.dockerignore', dockerignoreTemplate);
+    await _write(dir, 'docker-compose.yml', dockerComposeTemplate);
+  }
+
+  static void _printBlogSuccess(String projectName) {
+    print('');
+    print('  \x1B[32m✓\x1B[0m Created blog project');
+    print('');
+    print('  lib/');
+    print('    ├── home/pages/index.dart     → /');
+    print('    ├── blog/pages/');
+    print('    │   ├── index.dart            → /blog');
+    print('    │   └── _slug_.dart           → /blog/:slug');
+    print('    ├── shared/layouts/');
+    print('    └── app.dart');
+    print('');
+    print('  server/                         (DuxtORM + API)');
+    print('    ├── main.dart');
+    print('    ├── db.dart');
+    print('    ├── models/post.dart');
+    print('    └── api/posts.dart');
+    print('');
+    print('  \x1B[36mDevelopment:\x1B[0m');
+    print('    duxt dev                      Start dev server');
+    print('');
+    print('  \x1B[36mProduction:\x1B[0m');
+    print('    duxt build && docker build -t $projectName .');
   }
 
   static Future<void> _createDirectories(String targetDir, {required String mode}) async {
@@ -131,3 +238,96 @@ class TemplateGenerator {
     print('    duxt build && docker build -t $projectName .');
   }
 }
+
+// Blog template specific strings
+const _blogAppTemplate = r'''
+import 'package:jaspr/jaspr.dart';
+import 'package:jaspr_router/jaspr_router.dart';
+
+import '.generated/routes.dart' as generated;
+import 'shared/layouts/default.dart';
+
+class App extends StatelessComponent {
+  const App({super.key});
+
+  @override
+  Component build(BuildContext context) {
+    final routes = generated.generatedRoutes;
+
+    final wrappedRoutes = routes.map((route) => Route(
+      path: route.path,
+      builder: (context, state) => DefaultLayout(
+        child: Builder(builder: (ctx) => route.builder!(ctx, state)),
+      ),
+    )).toList();
+
+    return Router(routes: wrappedRoutes);
+  }
+}
+''';
+
+const _blogLayoutTemplate = r'''
+import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
+import 'package:jaspr_router/jaspr_router.dart';
+
+class DefaultLayout extends StatelessComponent {
+  final Component child;
+
+  const DefaultLayout({super.key, required this.child});
+
+  @override
+  Component build(BuildContext context) {
+    return div(classes: 'min-h-screen bg-gray-950 flex flex-col', [
+      header(classes: 'sticky top-0 z-50 bg-gray-900/95 backdrop-blur border-b border-gray-800', [
+        div(classes: 'max-w-4xl mx-auto px-4', [
+          div(classes: 'flex h-16 items-center justify-between', [
+            Link(to: '/', child: span(classes: 'text-xl font-bold text-white', [Component.text('My Blog')])),
+            nav(classes: 'flex items-center gap-6', [
+              Link(to: '/', child: span(classes: 'text-sm text-gray-300 hover:text-white transition-colors', [Component.text('Home')])),
+              Link(to: '/blog', child: span(classes: 'text-sm text-gray-300 hover:text-white transition-colors', [Component.text('Blog')])),
+            ]),
+          ]),
+        ]),
+      ]),
+      div(classes: 'flex-1', [child]),
+      footer(classes: 'bg-gray-900 border-t border-gray-800 py-8', [
+        div(classes: 'max-w-4xl mx-auto px-4 text-center text-gray-400 text-sm', [
+          Component.text('Built with Duxt'),
+        ]),
+      ]),
+    ]);
+  }
+}
+''';
+
+String _blogHomeTemplate(String projectName) => '''
+import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
+import 'package:jaspr_router/jaspr_router.dart';
+
+class HomePage extends StatelessComponent {
+  const HomePage({super.key});
+
+  @override
+  Component build(BuildContext context) {
+    return div(classes: 'py-20 px-4', [
+      div(classes: 'max-w-2xl mx-auto text-center', [
+        h1(classes: 'text-5xl font-bold text-white mb-6', [
+          Component.text('$projectName'),
+        ]),
+        p(classes: 'text-xl text-gray-400 mb-8', [
+          Component.text('A blog built with Duxt'),
+        ]),
+        Link(
+          to: '/blog',
+          child: span(
+            classes: 'inline-block px-6 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors',
+            [Component.text('Read the Blog')],
+          ),
+        ),
+      ]),
+    ]);
+  }
+}
+''';

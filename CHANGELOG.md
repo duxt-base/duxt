@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-02-02
+
+### Added
+- **`--template` flag** for `duxt create` - Choose from multiple project templates
+  - `default` - Full-featured demo (existing behavior)
+  - `minimal` - Clean starting point with just home page and layout
+  - `marketing` - Landing page with hero, features, pricing, testimonials
+  - `blog` - Focused blog with DuxtORM backend
+  - `saas` - Coming soon (requires duxt_auth)
+- Interactive template selection when no `--template` flag provided
+
+### Changed
+- `duxt create` now shows both template and mode selection
+
 ## [0.3.11] - 2026-01-31
 
 ### Changed
