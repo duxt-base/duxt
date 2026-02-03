@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.4] - 2026-02-03
+
+### Changed
+- **Removed version constraints from templates** - All project templates now use flexible dependency versions
+- New projects will always get the latest compatible versions of duxt, duxt_ui, duxt_orm, jaspr, etc.
+
 ## [0.4.3] - 2026-02-03
 
 ### Changed
