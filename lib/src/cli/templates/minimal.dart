@@ -85,16 +85,16 @@ environment:
   sdk: ^3.0.0
 
 dependencies:
-  jaspr: ^0.22.1
-  jaspr_router: ^0.8.1
-  duxt: ^0.4.0
+  jaspr:
+  jaspr_router:
+  duxt:
   duxt_ui:
 
 dev_dependencies:
-  build_runner: ^2.4.0
-  build_web_compilers: ^4.4.8
-  jaspr_builder: ^0.22.1
-  lints: ^4.0.0
+  build_runner:
+  build_web_compilers:
+  jaspr_builder:
+  lints:
 
 jaspr:
   mode: $mode
