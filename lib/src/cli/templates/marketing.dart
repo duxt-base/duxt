@@ -104,7 +104,7 @@ dependencies:
   jaspr: ^0.22.1
   jaspr_router: ^0.8.1
   duxt: ^0.4.0
-  duxt_ui: ^0.2.3
+  duxt_ui:
 
 dev_dependencies:
   build_runner: ^2.4.0
