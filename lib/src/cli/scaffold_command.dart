@@ -620,7 +620,8 @@ $inputFields
       } else if (f.type == 'DateTime?') {
         fromRowLines.add("      ${f.name}: row['$snakeName'] != null ? DateTime.tryParse(row['$snakeName'] as String) : null,");
       } else {
-        fromRowLines.add("      ${f.name}: row['$snakeName'] as ${f.type}?,");
+        final castType = f.type.endsWith('?') ? f.type : '${f.type}?';
+        fromRowLines.add("      ${f.name}: row['$snakeName'] as $castType,");
       }
     }
     for (final f in belongsToFields) {
