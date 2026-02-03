@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.3] - 2026-02-03
+
+### Changed
+- **Scaffold uses duxt_ui DModal** - Modal forms now use the `DModal` component from duxt_ui instead of built-in modal implementation
+- Removed `d_modal.dart` from duxt package (use `duxt_ui` instead)
+- Cleaner generated code with proper component separation
+
+## [0.4.2] - 2026-02-03
+
+### Added
+- **Modal-based CRUD** - Scaffold generates modal forms instead of separate `/new` and `/edit` pages
+  - List page has "New" button that opens modal form
+  - Detail page has "Edit" button that opens pre-populated modal form
+  - Reduced from 4 routes to 2 routes per module (list + detail)
+- `DModal` component with HTML `<dialog>` element for accessible modals
+- Form data pre-population for edit mode via JavaScript
+
+### Changed
+- Scaffold-generated pages use `AsyncStatelessComponent` for SSR data loading
+- Forms submit via fetch API with JSON, then refresh page
+- Navigation links auto-added to default layout
+
 ## [0.4.1] - 2026-02-03
 
 ### Added
