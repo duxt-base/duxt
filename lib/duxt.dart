@@ -25,6 +25,5 @@ export 'src/runtime/middleware.dart';
 export 'src/runtime/composable.dart';
 export 'src/runtime/api.dart';
 export 'src/runtime/duxt_state.dart';
-export 'src/runtime/d_modal.dart';
 
 // Content exports are available via 'package:duxt/content.dart'

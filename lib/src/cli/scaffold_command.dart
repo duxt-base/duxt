@@ -340,6 +340,7 @@ class ${className}Api {
 import 'package:jaspr/server.dart';
 import 'package:jaspr/dom.dart';
 import 'package:duxt_orm/duxt_orm.dart';
+import 'package:duxt_ui/duxt_ui.dart';
 import 'package:$packageName/models/$singular.dart';
 import '../components/${singular}_card.dart';
 import '../components/${singular}_form.dart';
@@ -359,10 +360,17 @@ class ${pluralClass}ListPage extends AsyncStatelessComponent {
         h1(classes: 'text-3xl font-bold text-white', [
           Component.text('$pluralClass'),
         ]),
-        button(
-          id: 'open-create-modal',
-          classes: 'px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700',
-          [Component.text('New $className')],
+        // Create Modal with DModal component
+        DModal(
+          trigger: span(
+            classes: 'px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700',
+            [Component.text('New $className')],
+          ),
+          title: 'New $className',
+          size: DModalSize.lg,
+          children: [
+            ${className}Form(),
+          ],
         ),
       ]),
       // List
@@ -376,56 +384,8 @@ class ${pluralClass}ListPage extends AsyncStatelessComponent {
             ${className}Card(item: item),
         ]),
 
-      // Create Modal
-      div(
-        id: 'create-modal',
-        classes: 'fixed inset-0 z-50 hidden items-center justify-center',
-        [
-          // Backdrop
-          div(
-            id: 'modal-backdrop',
-            classes: 'absolute inset-0 bg-black/60 backdrop-blur-sm',
-            [],
-          ),
-          // Modal content
-          div(
-            classes: 'max-w-lg w-full mx-4 bg-gray-800 rounded-xl shadow-2xl border border-gray-700 relative z-10',
-            [
-              // Header
-              div(classes: 'flex items-center justify-between p-4 border-b border-gray-700', [
-                h3(classes: 'text-lg font-semibold text-white', [Component.text('New $className')]),
-                button(
-                  id: 'close-modal',
-                  classes: 'text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700',
-                  [Component.text('✕')],
-                ),
-              ]),
-              // Body
-              div(classes: 'p-4', [
-                ${className}Form(),
-              ]),
-            ],
-          ),
-        ],
-      ),
-
-      // Modal and form scripts
+      // Form submission script
       RawText(\'''<script>
-        // Modal controls
-        document.getElementById('open-create-modal').addEventListener('click', function() {
-          document.getElementById('create-modal').classList.remove('hidden');
-          document.getElementById('create-modal').classList.add('flex');
-        });
-        document.getElementById('close-modal').addEventListener('click', function() {
-          document.getElementById('create-modal').classList.add('hidden');
-          document.getElementById('create-modal').classList.remove('flex');
-        });
-        document.getElementById('modal-backdrop').addEventListener('click', function() {
-          document.getElementById('create-modal').classList.add('hidden');
-          document.getElementById('create-modal').classList.remove('flex');
-        });
-
-        // Form submission
         function submit${className}Form(e) {
           e.preventDefault();
           var form = document.getElementById('$singular-form');
@@ -468,6 +428,7 @@ $dataFields
 import 'package:jaspr/server.dart';
 import 'package:jaspr/dom.dart';
 import 'package:duxt_orm/duxt_orm.dart';
+import 'package:duxt_ui/duxt_ui.dart';
 import 'package:$packageName/models/$singular.dart';
 import '../components/${singular}_form.dart';
 
@@ -498,10 +459,17 @@ class ${pluralClass}DetailPage extends AsyncStatelessComponent {
           Component.text('$className Details'),
         ]),
         div(classes: 'flex gap-2', [
-          button(
-            id: 'open-edit-modal',
-            classes: 'px-4 py-2 bg-cyan-600 rounded-lg hover:bg-cyan-700 text-white',
-            [Component.text('Edit')],
+          // Edit Modal with DModal component
+          DModal(
+            trigger: span(
+              classes: 'px-4 py-2 bg-cyan-600 rounded-lg hover:bg-cyan-700 text-white cursor-pointer',
+              [Component.text('Edit')],
+            ),
+            title: 'Edit $className',
+            size: DModalSize.lg,
+            children: [
+              ${className}Form(),
+            ],
           ),
           button(
             id: 'delete-btn',
@@ -524,59 +492,14 @@ class ${pluralClass}DetailPage extends AsyncStatelessComponent {
 $fieldDisplays
       ]),
 
-      // Edit Modal
-      div(
-        id: 'edit-modal',
-        classes: 'fixed inset-0 z-50 hidden items-center justify-center',
-        [
-          // Backdrop
-          div(
-            id: 'edit-modal-backdrop',
-            classes: 'absolute inset-0 bg-black/60 backdrop-blur-sm',
-            [],
-          ),
-          // Modal content
-          div(
-            classes: 'max-w-lg w-full mx-4 bg-gray-800 rounded-xl shadow-2xl border border-gray-700 relative z-10',
-            [
-              // Header
-              div(classes: 'flex items-center justify-between p-4 border-b border-gray-700', [
-                h3(classes: 'text-lg font-semibold text-white', [Component.text('Edit $className')]),
-                button(
-                  id: 'close-edit-modal',
-                  classes: 'text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700',
-                  [Component.text('✕')],
-                ),
-              ]),
-              // Body
-              div(classes: 'p-4', [
-                ${className}Form(),
-              ]),
-            ],
-          ),
-        ],
-      ),
-
       // Scripts
       RawText(\'''<script>
-        // Edit modal controls
-        document.getElementById('open-edit-modal').addEventListener('click', function() {
-          document.getElementById('edit-modal').classList.remove('hidden');
-          document.getElementById('edit-modal').classList.add('flex');
-        });
-        document.getElementById('close-edit-modal').addEventListener('click', function() {
-          document.getElementById('edit-modal').classList.add('hidden');
-          document.getElementById('edit-modal').classList.remove('flex');
-        });
-        document.getElementById('edit-modal-backdrop').addEventListener('click', function() {
-          document.getElementById('edit-modal').classList.add('hidden');
-          document.getElementById('edit-modal').classList.remove('flex');
-        });
-
         // Pre-populate form with current values
         (function() {
           var form = document.getElementById('$singular-form');
+          if (form) {
 $valueSetters
+          }
         })();
 
         // Delete handler
