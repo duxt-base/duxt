@@ -55,6 +55,15 @@ class ScaffoldCommand extends Command<int> {
     final generateApi = argResults!['api'] as bool;
     final projectDir = Directory.current.path;
 
+    // Get package name from pubspec.yaml
+    final pubspecFile = File(p.join(projectDir, 'pubspec.yaml'));
+    String packageName = 'app';
+    if (pubspecFile.existsSync()) {
+      final content = pubspecFile.readAsStringSync();
+      final match = RegExp(r'^name:\s*(\S+)', multiLine: true).firstMatch(content);
+      if (match != null) packageName = match.group(1)!;
+    }
+
     // Extract relation fields
     final belongsToFields = fields.where((f) => f.isBelongsTo).toList();
     final toManyFields = fields.where((f) => f.isToMany).toList();
@@ -106,7 +115,7 @@ class ScaffoldCommand extends Command<int> {
         if (generateApi) {
           final routesDir = p.join(projectDir, 'server', 'api');
           await Directory(routesDir).create(recursive: true);
-          await _generateOrmRoutes(routesDir, singularClass, moduleName, singular, fields);
+          await _generateOrmRoutes(routesDir, singularClass, moduleName, singular, fields, packageName);
           print('  \x1B[32m✓\x1B[0m server/api/$moduleName.dart (routes)');
         } else {
           print('  \x1B[90m-\x1B[0m API routes skipped (--no-api)');
@@ -114,27 +123,28 @@ class ScaffoldCommand extends Command<int> {
       }
 
       if (!apiOnly) {
-        // 3. Generate List Page
-        await _generateListPage(moduleDir, moduleName, singularClass, fields);
-        print('  \x1B[32m✓\x1B[0m pages/index.dart');
+        // 3. Generate List Page (with Create modal)
+        await _generateListPage(moduleDir, moduleName, singularClass, fields, packageName);
+        print('  \x1B[32m✓\x1B[0m pages/index.dart (with create modal)');
 
-        // 4. Generate Detail Page
-        await _generateDetailPage(moduleDir, moduleName, singularClass, fields);
-        print('  \x1B[32m✓\x1B[0m pages/_id_.dart');
+        // 4. Generate Detail Page (with Edit modal)
+        await _generateDetailPage(moduleDir, moduleName, singularClass, fields, packageName);
+        print('  \x1B[32m✓\x1B[0m pages/_id_.dart (with edit modal)');
 
-        // 5. Generate New Page
-        await _generateNewPage(moduleDir, moduleName, singularClass, fields);
-        print('  \x1B[32m✓\x1B[0m pages/new.dart');
-
-        // 6. Generate Card Component
-        await _generateCard(moduleDir, singular, singularClass, fields);
+        // 5. Generate Card Component
+        await _generateCard(moduleDir, singular, singularClass, fields, packageName);
         print('  \x1B[32m✓\x1B[0m components/${singular}_card.dart');
 
-        // 7. Generate Form Component
+        // 6. Generate Form Component
         await _generateForm(moduleDir, singular, singularClass, fields);
         print('  \x1B[32m✓\x1B[0m components/${singular}_form.dart');
       }
 
+      // 8. Try to add nav link
+      await _addNavLink(projectDir, moduleName, className);
+
+      print('');
+      print('\x1B[32m✓ Scaffold complete!\x1B[0m');
       print('');
       print('\x1B[32m✓ Scaffold complete!\x1B[0m');
       print('');
@@ -144,10 +154,6 @@ class ScaffoldCommand extends Command<int> {
       print('  Route(');
       print("    path: '/$moduleName',");
       print('    builder: (_, __) => const ${className}ListPage(),');
-      print('  ),');
-      print('  Route(');
-      print("    path: '/$moduleName/new',");
-      print('    builder: (_, __) => const ${className}NewPage(),');
       print('  ),');
       print('  Route(');
       print("    path: '/$moduleName/:id',");
@@ -227,14 +233,27 @@ class ScaffoldCommand extends Command<int> {
   Future<void> _generateModel(String moduleDir, String className, List<FieldDef> fields) async {
     final allFields = [FieldDef(name: 'id', type: 'String'), ...fields];
 
-    final paramFields = allFields.map((f) => '  final ${f.type}${f.name == 'id' ? '' : '?'} ${f.name};').join('\n');
+    // Helper to add ? only if not already nullable
+    String makeNullable(String type) => type.endsWith('?') ? type : '$type?';
+
+    // Helper to get client-side type (toMany relations use List<dynamic>)
+    String getClientType(FieldDef f) {
+      if (f.isToMany) return 'List<dynamic>';
+      return f.type;
+    }
+
+    final paramFields = allFields.map((f) {
+      final type = getClientType(f);
+      return '  final ${f.name == 'id' ? type : makeNullable(type)} ${f.name};';
+    }).join('\n');
     final constructorParams = allFields.map((f) =>
       f.name == 'id' ? 'required this.id' : 'this.${f.name}').join(', ');
     final fromJsonFields = allFields.map((f) {
       if (f.name == 'id') {
         return "      id: json['id'].toString(),";
       }
-      return "      ${f.name}: json['${f.name}'] as ${f.type}?,";
+      final type = getClientType(f);
+      return "      ${f.name}: json['${f.name}'] as ${makeNullable(type)},";
     }).join('\n');
     final toJsonFields = allFields.map((f) =>
       "      '${f.name}': ${f.name},").join('\n');
@@ -262,7 +281,7 @@ $toJsonFields
   }
 
   $className copyWith({
-${allFields.map((f) => '    ${f.type}? ${f.name},').join('\n')}
+${allFields.map((f) => '    ${makeNullable(getClientType(f))} ${f.name},').join('\n')}
   }) {
     return $className(
 ${allFields.map((f) => '      ${f.name}: ${f.name} ?? this.${f.name},').join('\n')}
@@ -309,53 +328,39 @@ class ${className}Api {
     await File(p.join(moduleDir, 'api.dart')).writeAsString(content);
   }
 
-  Future<void> _generateListPage(String moduleDir, String moduleName, String className, List<FieldDef> fields) async {
+  Future<void> _generateListPage(String moduleDir, String moduleName, String className, List<FieldDef> fields, String packageName) async {
     final pluralClass = _toPascalCase(moduleName);
     final singular = _singularize(moduleName);
 
-    final content = '''
-import 'package:jaspr/jaspr.dart';
-import 'package:jaspr/dom.dart';
-import 'package:duxt/duxt.dart';
-import '../model.dart';
-import '../api.dart';
-import '../components/${singular}_card.dart';
+    // Build form data object from non-relation fields
+    final formFields = fields.where((f) => !f.isRelation).toList();
+    final dataFields = formFields.map((f) => '            ${f.name}: form.${f.name}.value').join(',\n');
 
-class ${pluralClass}ListPage extends StatefulComponent {
+    final content = '''
+import 'package:jaspr/server.dart';
+import 'package:jaspr/dom.dart';
+import 'package:duxt_orm/duxt_orm.dart';
+import 'package:$packageName/models/$singular.dart';
+import '../components/${singular}_card.dart';
+import '../components/${singular}_form.dart';
+
+/// ${pluralClass} list page - SSR with AsyncStatelessComponent
+class ${pluralClass}ListPage extends AsyncStatelessComponent {
   const ${pluralClass}ListPage({super.key});
 
   @override
-  State createState() => _${pluralClass}ListPageState();
-}
+  Future<Component> build(BuildContext context) async {
+    // Load data from database (SSR)
+    final items = await Model<$className>().all();
 
-class _${pluralClass}ListPageState extends DuxtState<${pluralClass}ListPage, List<$className>> {
-  @override
-  Future<List<$className>> load() => ${className}Api.getAll();
-
-  @override
-  Component buildLoading() {
-    return div(classes: 'flex justify-center py-12', [
-      text('Loading...'),
-    ]);
-  }
-
-  @override
-  Component buildError(Object error) {
-    return div(classes: 'text-red-600 py-12', [
-      text('Error: \$error'),
-    ]);
-  }
-
-  @override
-  Component buildData(List<$className> items) {
     return div(classes: 'space-y-6', [
       // Header
       div(classes: 'flex justify-between items-center', [
-        h1(classes: 'text-3xl font-bold text-gray-900', [
-          text('$pluralClass'),
+        h1(classes: 'text-3xl font-bold text-white', [
+          Component.text('$pluralClass'),
         ]),
-        a(
-          href: '/$moduleName/new',
+        button(
+          id: 'open-create-modal',
           classes: 'px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700',
           [Component.text('New $className')],
         ),
@@ -363,13 +368,80 @@ class _${pluralClass}ListPageState extends DuxtState<${pluralClass}ListPage, Lis
       // List
       if (items.isEmpty)
         div(classes: 'text-center py-12 text-gray-500', [
-          text('No $moduleName yet'),
+          Component.text('No $moduleName yet'),
         ])
       else
         div(classes: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6', [
           for (final item in items)
             ${className}Card(item: item),
         ]),
+
+      // Create Modal
+      div(
+        id: 'create-modal',
+        classes: 'fixed inset-0 z-50 hidden items-center justify-center',
+        [
+          // Backdrop
+          div(
+            id: 'modal-backdrop',
+            classes: 'absolute inset-0 bg-black/60 backdrop-blur-sm',
+            [],
+          ),
+          // Modal content
+          div(
+            classes: 'max-w-lg w-full mx-4 bg-gray-800 rounded-xl shadow-2xl border border-gray-700 relative z-10',
+            [
+              // Header
+              div(classes: 'flex items-center justify-between p-4 border-b border-gray-700', [
+                h3(classes: 'text-lg font-semibold text-white', [Component.text('New $className')]),
+                button(
+                  id: 'close-modal',
+                  classes: 'text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700',
+                  [Component.text('✕')],
+                ),
+              ]),
+              // Body
+              div(classes: 'p-4', [
+                ${className}Form(),
+              ]),
+            ],
+          ),
+        ],
+      ),
+
+      // Modal and form scripts
+      RawText(\'''<script>
+        // Modal controls
+        document.getElementById('open-create-modal').addEventListener('click', function() {
+          document.getElementById('create-modal').classList.remove('hidden');
+          document.getElementById('create-modal').classList.add('flex');
+        });
+        document.getElementById('close-modal').addEventListener('click', function() {
+          document.getElementById('create-modal').classList.add('hidden');
+          document.getElementById('create-modal').classList.remove('flex');
+        });
+        document.getElementById('modal-backdrop').addEventListener('click', function() {
+          document.getElementById('create-modal').classList.add('hidden');
+          document.getElementById('create-modal').classList.remove('flex');
+        });
+
+        // Form submission
+        function submit${className}Form(e) {
+          e.preventDefault();
+          var form = document.getElementById('$singular-form');
+          var data = {
+$dataFields
+          };
+          fetch('/api/$moduleName', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+          }).then(function(r) { return r.json(); }).then(function() {
+            window.location.reload();
+          }).catch(function(err) { alert('Error: ' + err); });
+          return false;
+        }
+      </script>\'''),
     ]);
   }
 }
@@ -377,69 +449,164 @@ class _${pluralClass}ListPageState extends DuxtState<${pluralClass}ListPage, Lis
     await File(p.join(moduleDir, 'pages', 'index.dart')).writeAsString(content);
   }
 
-  Future<void> _generateDetailPage(String moduleDir, String moduleName, String className, List<FieldDef> fields) async {
+  Future<void> _generateDetailPage(String moduleDir, String moduleName, String className, List<FieldDef> fields, String packageName) async {
     final pluralClass = _toPascalCase(moduleName);
+    final singular = _singularize(moduleName);
 
-    final fieldDisplays = fields.map((f) => '''
-          div(classes: 'py-4 border-b', [
-            dt(classes: 'text-sm text-gray-500', [Component.text('${_toTitleCase(f.name)}')]),
-            dd(classes: 'mt-1 text-gray-900', [Component.text('\${item.${f.name} ?? "-"}')]),
+    final fieldDisplays = fields.where((f) => !f.isRelation).map((f) => '''
+          div(classes: 'py-4 border-b border-gray-700', [
+            dt(classes: 'text-sm text-gray-400', [Component.text('${_toTitleCase(f.name)}')]),
+            dd(classes: 'mt-1 text-white', [Component.text('\${item.${f.name} ?? "-"}')]),
           ]),''').join('\n');
 
-    final content = '''
-import 'package:jaspr/jaspr.dart';
-import 'package:jaspr/dom.dart';
-import 'package:duxt/duxt.dart';
-import '../model.dart';
-import '../api.dart';
+    // Build form data object from non-relation fields
+    final formFields = fields.where((f) => !f.isRelation).toList();
+    final dataFields = formFields.map((f) => '            ${f.name}: form.${f.name}.value').join(',\n');
+    final valueSetters = formFields.map((f) => "          form.${f.name}.value = '\${_escapeJs(item.${f.name}?.toString() ?? '')}';").join('\n');
 
-class ${pluralClass}DetailPage extends StatefulComponent {
+    final content = '''
+import 'package:jaspr/server.dart';
+import 'package:jaspr/dom.dart';
+import 'package:duxt_orm/duxt_orm.dart';
+import 'package:$packageName/models/$singular.dart';
+import '../components/${singular}_form.dart';
+
+String _escapeJs(String s) => s.replaceAll("'", "\\\\'").replaceAll('\\n', '\\\\n');
+
+/// ${className} detail page - SSR with AsyncStatelessComponent
+class ${pluralClass}DetailPage extends AsyncStatelessComponent {
   final String id;
 
   const ${pluralClass}DetailPage({super.key, required this.id});
 
   @override
-  State createState() => _${pluralClass}DetailPageState();
-}
+  Future<Component> build(BuildContext context) async {
+    final itemId = int.tryParse(id);
+    if (itemId == null) {
+      return div(classes: 'text-red-400 py-12', [Component.text('Invalid ID')]);
+    }
 
-class _${pluralClass}DetailPageState extends DuxtState<${pluralClass}DetailPage, $className> {
-  @override
-  Future<$className> load() => ${className}Api.getOne(component.id);
+    final item = await Model<$className>().find(itemId);
+    if (item == null) {
+      return div(classes: 'text-red-400 py-12', [Component.text('$className not found')]);
+    }
 
-  @override
-  Component buildLoading() {
-    return div(classes: 'flex justify-center py-12', [Component.text('Loading...')]);
-  }
-
-  @override
-  Component buildError(Object error) {
-    return div(classes: 'text-red-600 py-12', [Component.text('Error: \$error')]);
-  }
-
-  @override
-  Component buildData($className item) {
     return div(classes: 'max-w-2xl mx-auto', [
       // Header
       div(classes: 'flex justify-between items-center mb-8', [
-        h1(classes: 'text-3xl font-bold text-gray-900', [
-          text('$className Details'),
+        h1(classes: 'text-3xl font-bold text-white', [
+          Component.text('$className Details'),
         ]),
         div(classes: 'flex gap-2', [
+          button(
+            id: 'open-edit-modal',
+            classes: 'px-4 py-2 bg-cyan-600 rounded-lg hover:bg-cyan-700 text-white',
+            [Component.text('Edit')],
+          ),
+          button(
+            id: 'delete-btn',
+            classes: 'px-4 py-2 bg-red-600 rounded-lg hover:bg-red-700 text-white',
+            [Component.text('Delete')],
+          ),
           a(
             href: '/$moduleName',
-            classes: 'px-4 py-2 border rounded-lg hover:bg-gray-50',
+            classes: 'px-4 py-2 border border-gray-600 rounded-lg hover:bg-gray-800 text-white',
             [Component.text('Back')],
           ),
         ]),
       ]),
       // Details
-      dl(classes: 'divide-y', [
-        div(classes: 'py-4 border-b', [
-          dt(classes: 'text-sm text-gray-500', [Component.text('ID')]),
-          dd(classes: 'mt-1 text-gray-900', [Component.text(item.id)]),
+      dl(classes: 'divide-y divide-gray-700', [
+        div(classes: 'py-4 border-b border-gray-700', [
+          dt(classes: 'text-sm text-gray-400', [Component.text('ID')]),
+          dd(classes: 'mt-1 text-white', [Component.text('\${item.id}')]),
         ]),
 $fieldDisplays
       ]),
+
+      // Edit Modal
+      div(
+        id: 'edit-modal',
+        classes: 'fixed inset-0 z-50 hidden items-center justify-center',
+        [
+          // Backdrop
+          div(
+            id: 'edit-modal-backdrop',
+            classes: 'absolute inset-0 bg-black/60 backdrop-blur-sm',
+            [],
+          ),
+          // Modal content
+          div(
+            classes: 'max-w-lg w-full mx-4 bg-gray-800 rounded-xl shadow-2xl border border-gray-700 relative z-10',
+            [
+              // Header
+              div(classes: 'flex items-center justify-between p-4 border-b border-gray-700', [
+                h3(classes: 'text-lg font-semibold text-white', [Component.text('Edit $className')]),
+                button(
+                  id: 'close-edit-modal',
+                  classes: 'text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700',
+                  [Component.text('✕')],
+                ),
+              ]),
+              // Body
+              div(classes: 'p-4', [
+                ${className}Form(),
+              ]),
+            ],
+          ),
+        ],
+      ),
+
+      // Scripts
+      RawText(\'''<script>
+        // Edit modal controls
+        document.getElementById('open-edit-modal').addEventListener('click', function() {
+          document.getElementById('edit-modal').classList.remove('hidden');
+          document.getElementById('edit-modal').classList.add('flex');
+        });
+        document.getElementById('close-edit-modal').addEventListener('click', function() {
+          document.getElementById('edit-modal').classList.add('hidden');
+          document.getElementById('edit-modal').classList.remove('flex');
+        });
+        document.getElementById('edit-modal-backdrop').addEventListener('click', function() {
+          document.getElementById('edit-modal').classList.add('hidden');
+          document.getElementById('edit-modal').classList.remove('flex');
+        });
+
+        // Pre-populate form with current values
+        (function() {
+          var form = document.getElementById('$singular-form');
+$valueSetters
+        })();
+
+        // Delete handler
+        document.getElementById('delete-btn').addEventListener('click', function() {
+          if (confirm('Are you sure you want to delete this $singular?')) {
+            fetch('/api/$moduleName/\${item.id}', {
+              method: 'DELETE'
+            }).then(function() {
+              window.location.href = '/$moduleName';
+            }).catch(function(err) { alert('Error: ' + err); });
+          }
+        });
+
+        // Form submission (update)
+        function submit${className}Form(e) {
+          e.preventDefault();
+          var form = document.getElementById('$singular-form');
+          var data = {
+$dataFields
+          };
+          fetch('/api/$moduleName/\${item.id}', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+          }).then(function(r) { return r.json(); }).then(function() {
+            window.location.reload();
+          }).catch(function(err) { alert('Error: ' + err); });
+          return false;
+        }
+      </script>\'''),
     ]);
   }
 }
@@ -447,48 +614,15 @@ $fieldDisplays
     await File(p.join(moduleDir, 'pages', '_id_.dart')).writeAsString(content);
   }
 
-  Future<void> _generateNewPage(String moduleDir, String moduleName, String className, List<FieldDef> fields) async {
-    final pluralClass = _toPascalCase(moduleName);
-    final singular = _singularize(moduleName);
+  Future<void> _generateCard(String moduleDir, String singular, String className, List<FieldDef> fields, String packageName) async {
+    final displayField = fields.where((f) => !f.isRelation).isNotEmpty
+        ? fields.where((f) => !f.isRelation).first.name
+        : 'id';
 
     final content = '''
 import 'package:jaspr/jaspr.dart';
 import 'package:jaspr/dom.dart';
-import '../components/${singular}_form.dart';
-
-class ${pluralClass}NewPage extends StatelessComponent {
-  const ${pluralClass}NewPage({super.key});
-
-  @override
-  Component build(BuildContext context) {
-    return div(classes: 'max-w-2xl mx-auto', [
-      // Header
-      div(classes: 'flex justify-between items-center mb-8', [
-        h1(classes: 'text-3xl font-bold text-gray-900', [
-          text('New $className'),
-        ]),
-        a(
-          href: '/$moduleName',
-          classes: 'px-4 py-2 border rounded-lg hover:bg-gray-50',
-          [Component.text('Cancel')],
-        ),
-      ]),
-      // Form
-      ${className}Form(),
-    ]);
-  }
-}
-''';
-    await File(p.join(moduleDir, 'pages', 'new.dart')).writeAsString(content);
-  }
-
-  Future<void> _generateCard(String moduleDir, String singular, String className, List<FieldDef> fields) async {
-    final displayField = fields.isNotEmpty ? fields.first.name : 'id';
-
-    final content = '''
-import 'package:jaspr/jaspr.dart';
-import 'package:jaspr/dom.dart';
-import '../model.dart';
+import 'package:$packageName/models/$singular.dart';
 
 class ${className}Card extends StatelessComponent {
   final $className item;
@@ -499,13 +633,13 @@ class ${className}Card extends StatelessComponent {
   Component build(BuildContext context) {
     return a(
       href: '/${_pluralize(singular)}/\${item.id}',
-      classes: 'block p-6 bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow',
+      classes: 'block p-6 bg-gray-800/50 rounded-lg border border-gray-700 hover:border-cyan-500/50 transition-colors',
       [
-        h3(classes: 'text-lg font-semibold text-gray-900', [
-          text('\${item.$displayField ?? "Untitled"}'),
+        h3(classes: 'text-lg font-semibold text-white', [
+          Component.text('\${item.$displayField ?? "Untitled"}'),
         ]),
-        p(classes: 'text-sm text-gray-500 mt-1', [
-          text('ID: \${item.id}'),
+        p(classes: 'text-sm text-gray-400 mt-1', [
+          Component.text('ID: \${item.id}'),
         ]),
       ],
     );
@@ -516,15 +650,17 @@ class ${className}Card extends StatelessComponent {
   }
 
   Future<void> _generateForm(String moduleDir, String singular, String className, List<FieldDef> fields) async {
-    final inputFields = fields.map((f) => '''
+    // Only include non-relation fields in form
+    final formFields = fields.where((f) => !f.isRelation).toList();
+    final inputFields = formFields.map((f) => '''
         div(classes: 'space-y-1', [
-          label(classes: 'block text-sm font-medium text-gray-700', [
-            text('${_toTitleCase(f.name)}'),
+          label(classes: 'block text-sm font-medium text-gray-300', [
+            Component.text('${_toTitleCase(f.name)}'),
           ]),
           input(
             type: InputType.text,
             name: '${f.name}',
-            classes: 'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500',
+            classes: 'w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500',
           ),
         ]),''').join('\n');
 
@@ -538,7 +674,9 @@ class ${className}Form extends StatelessComponent {
   @override
   Component build(BuildContext context) {
     return form(
+      id: '${singular}-form',
       classes: 'space-y-6',
+      attributes: {'onsubmit': 'return submit${className}Form(event)'},
       [
 $inputFields
         // Submit
@@ -770,14 +908,17 @@ $relationRegistrations
     await File(p.join(modelsDir, '$singular.dart')).writeAsString(content);
   }
 
-  Future<void> _generateOrmRoutes(String routesDir, String className, String moduleName, String singular, List<FieldDef> fields) async {
+  Future<void> _generateOrmRoutes(String routesDir, String className, String moduleName, String singular, List<FieldDef> fields, String packageName) async {
     // Filter for regular fields only (not relations)
     final regularFields = fields.where((f) => !f.isRelation).toList();
+
+    // Helper to make nullable type (avoid String??)
+    String makeNullable(String type) => type.endsWith('?') ? type : '$type?';
 
     final content = '''
 import 'package:duxt/server.dart';
 import 'package:duxt_orm/duxt_orm.dart';
-import 'package:blog_app/models/$singular.dart';
+import 'package:$packageName/models/$singular.dart';
 
 /// Register $moduleName API routes
 void register${className}Routes(DuxtServer server) {
@@ -831,7 +972,7 @@ void register${className}Routes(DuxtServer server) {
 
     final body = req.body as Map<String, dynamic>?;
     if (body != null) {
-${regularFields.map((f) => "      if (body.containsKey('${f.name}')) item.${f.name} = body['${f.name}'] as ${f.type}?;").join('\n')}
+${regularFields.map((f) => "      if (body.containsKey('${f.name}')) item.${f.name} = body['${f.name}'] as ${makeNullable(f.type)};").join('\n')}
     }
 
     await item.save();
@@ -927,6 +1068,61 @@ ${regularFields.map((f) => "      if (body.containsKey('${f.name}')) item.${f.na
       return '${s}es';
     }
     return '${s}s';
+  }
+
+  Future<void> _addNavLink(String projectDir, String moduleName, String className) async {
+    // Try to find and update the default layout file
+    final layoutPaths = [
+      p.join(projectDir, 'lib', 'shared', 'layouts', 'default.dart'),
+      p.join(projectDir, 'lib', 'layouts', 'default.dart'),
+      p.join(projectDir, 'lib', 'shared', 'layout.dart'),
+    ];
+
+    for (final layoutPath in layoutPaths) {
+      final file = File(layoutPath);
+      if (file.existsSync()) {
+        var content = await file.readAsString();
+
+        // Check if link already exists
+        if (content.contains("to: '/$moduleName'") || content.contains("href: '/$moduleName'")) {
+          return; // Already has link
+        }
+
+        // Try to find nav section and add link
+        // Look for the last Link in a nav section and add after it
+        final linkPattern = RegExp(
+          r"(Link\(to: '/[^']+', child: span\(classes: '[^']+', \[Component\.text\('[^']+'\)\]\)\)),?\n(\s*)(\]\),)",
+          multiLine: true,
+        );
+
+        if (linkPattern.hasMatch(content)) {
+          content = content.replaceFirstMapped(linkPattern, (m) {
+            final indent = m.group(2) ?? '              ';
+            return "${m.group(1)},\n${indent}Link(to: '/$moduleName', child: span(classes: 'text-sm text-gray-300 hover:text-white transition-colors', [Component.text('$className')])),\n${m.group(2)}${m.group(3)}";
+          });
+          await file.writeAsString(content);
+          print('  \x1B[32m✓\x1B[0m Added nav link to ${p.basename(layoutPath)}');
+          return;
+        }
+
+        // Pattern 2: a(href: '/...', [...])
+        final aPattern = RegExp(
+          r"(a\(href: '/[^']+',\s*\[[^\]]+\]\)),?\n(\s*)(\]\),)",
+          multiLine: true,
+        );
+
+        if (aPattern.hasMatch(content)) {
+          content = content.replaceFirstMapped(aPattern, (m) {
+            final indent = m.group(2) ?? '              ';
+            return "${m.group(1)},\n${indent}a(href: '/$moduleName', [Component.text('$className')]),\n${m.group(2)}${m.group(3)}";
+          });
+          await file.writeAsString(content);
+          print('  \x1B[32m✓\x1B[0m Added nav link to ${p.basename(layoutPath)}');
+          return;
+        }
+      }
+    }
+    // If we couldn't add automatically, don't print error - user can add manually
   }
 }
 

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:fetch_client/fetch_client.dart';
 import 'package:http/http.dart' as http;
 
 /// Simple static API class for HTTP requests.
@@ -18,6 +19,12 @@ class Api {
     'Content-Type': 'application/json',
   };
   static void Function(Object error)? _onError;
+  static http.Client? _client;
+
+  static http.Client get _httpClient {
+    _client ??= FetchClient(mode: RequestMode.cors);
+    return _client!;
+  }
 
   /// Configure the API client.
   static void configure({
@@ -51,7 +58,7 @@ class Api {
       uri = uri.replace(queryParameters: query);
     }
 
-    final response = await http.get(
+    final response = await _httpClient.get(
       uri,
       headers: {..._defaultHeaders, ...?headers},
     );
@@ -65,7 +72,7 @@ class Api {
     Object? body,
     Map<String, String>? headers,
   }) async {
-    final response = await http.post(
+    final response = await _httpClient.post(
       Uri.parse('$_baseUrl$path'),
       headers: {..._defaultHeaders, ...?headers},
       body: body != null ? jsonEncode(body) : null,
@@ -80,7 +87,7 @@ class Api {
     Object? body,
     Map<String, String>? headers,
   }) async {
-    final response = await http.put(
+    final response = await _httpClient.put(
       Uri.parse('$_baseUrl$path'),
       headers: {..._defaultHeaders, ...?headers},
       body: body != null ? jsonEncode(body) : null,
@@ -95,7 +102,7 @@ class Api {
     Object? body,
     Map<String, String>? headers,
   }) async {
-    final response = await http.patch(
+    final response = await _httpClient.patch(
       Uri.parse('$_baseUrl$path'),
       headers: {..._defaultHeaders, ...?headers},
       body: body != null ? jsonEncode(body) : null,
@@ -109,7 +116,7 @@ class Api {
     String path, {
     Map<String, String>? headers,
   }) async {
-    final response = await http.delete(
+    final response = await _httpClient.delete(
       Uri.parse('$_baseUrl$path'),
       headers: {..._defaultHeaders, ...?headers},
     );

@@ -66,14 +66,21 @@ abstract class DuxtState<S extends StatefulComponent, T> extends State<S> {
       _data = null;
     }
     _loading = false;
-    setState(() {});
+    // setState may fail on server (SSR) - that's expected
+    try {
+      setState(() {});
+    } catch (_) {
+      // On server, setState throws - ignore and let client hydrate
+    }
   }
 
   /// Reload the data.
   Future<void> reload() async {
     _loading = true;
     _error = null;
-    setState(() {});
+    try {
+      setState(() {});
+    } catch (_) {}
     await _loadData();
   }
 
@@ -154,7 +161,10 @@ abstract class DuxtMultiState<S extends StatefulComponent> extends State<S> {
       _error = e;
     }
     _loading = false;
-    setState(() {});
+    // setState may fail on server (SSR) - that's expected
+    try {
+      setState(() {});
+    } catch (_) {}
   }
 
   /// Reload all data.
@@ -162,7 +172,9 @@ abstract class DuxtMultiState<S extends StatefulComponent> extends State<S> {
     _loading = true;
     _error = null;
     _data.clear();
-    setState(() {});
+    try {
+      setState(() {});
+    } catch (_) {}
     await _loadAll();
   }
 
@@ -171,10 +183,14 @@ abstract class DuxtMultiState<S extends StatefulComponent> extends State<S> {
     if (!loaders.containsKey(key)) return;
     try {
       _data[key] = await loaders[key]!();
-      setState(() {});
+      try {
+        setState(() {});
+      } catch (_) {}
     } catch (e) {
       _error = e;
-      setState(() {});
+      try {
+        setState(() {});
+      } catch (_) {}
     }
   }
 
