@@ -32,6 +32,8 @@ class ScaffoldCommand extends Command<int> {
     argParser.addFlag('force', abbr: 'f', help: 'Overwrite existing files');
     argParser.addFlag('api-only', help: 'Only generate model and API');
     argParser.addFlag('orm', help: 'Generate DuxtOrm server model with schema');
+    argParser.addFlag('api', defaultsTo: true,
+      help: 'Generate REST API endpoints (use --no-api for SSR-only models)');
   }
 
   @override
@@ -50,7 +52,12 @@ class ScaffoldCommand extends Command<int> {
     final force = argResults!['force'] as bool;
     final apiOnly = argResults!['api-only'] as bool;
     final useOrm = argResults!['orm'] as bool;
+    final generateApi = argResults!['api'] as bool;
     final projectDir = Directory.current.path;
+
+    // Extract relation fields
+    final belongsToFields = fields.where((f) => f.isBelongsTo).toList();
+    final toManyFields = fields.where((f) => f.isToMany).toList();
 
     print('');
     print('\x1B[36mScaffolding $moduleName module...\x1B[0m');
@@ -83,16 +90,27 @@ class ScaffoldCommand extends Command<int> {
 
       // 2b. Generate ORM Model (server-side)
       if (useOrm) {
-        final serverDir = p.join(projectDir, 'server', 'models');
-        await Directory(serverDir).create(recursive: true);
-        await _generateOrmModel(serverDir, singularClass, moduleName, fields);
-        print('  \x1B[32m✓\x1B[0m server/models/${singular}.dart (DuxtOrm)');
+        // Generate model in lib/models/ for SSR access
+        final modelsDir = p.join(projectDir, 'lib', 'models');
+        await Directory(modelsDir).create(recursive: true);
+        await _generateOrmModel(modelsDir, singularClass, moduleName, fields, belongsToFields, toManyFields);
+        print('  \x1B[32m✓\x1B[0m lib/models/${singular}.dart (DuxtOrm)');
 
-        // Generate server routes
-        final routesDir = p.join(projectDir, 'server', 'api');
-        await Directory(routesDir).create(recursive: true);
-        await _generateOrmRoutes(routesDir, singularClass, moduleName, singular, fields);
-        print('  \x1B[32m✓\x1B[0m server/api/$moduleName.dart (routes)');
+        // Generate pivot tables for toMany relations
+        for (final rel in toManyFields) {
+          final pivotTable = '${singular}_${_singularize(rel.name).toLowerCase()}s';
+          print('  \x1B[32m✓\x1B[0m Pivot table: $pivotTable');
+        }
+
+        // Generate server routes (only if --api is true)
+        if (generateApi) {
+          final routesDir = p.join(projectDir, 'server', 'api');
+          await Directory(routesDir).create(recursive: true);
+          await _generateOrmRoutes(routesDir, singularClass, moduleName, singular, fields);
+          print('  \x1B[32m✓\x1B[0m server/api/$moduleName.dart (routes)');
+        } else {
+          print('  \x1B[90m-\x1B[0m API routes skipped (--no-api)');
+        }
       }
 
       if (!apiOnly) {
@@ -148,7 +166,29 @@ class ScaffoldCommand extends Command<int> {
     for (final arg in args) {
       if (arg.contains(':')) {
         final parts = arg.split(':');
-        fields.add(FieldDef(name: parts[0], type: _normalizeType(parts[1])));
+        final name = parts[0];
+        final typeOrRelation = parts[1].toLowerCase();
+
+        // Check for relation syntax: field:belongsTo:Model or field:toMany:Model
+        if (typeOrRelation == 'belongsto' && parts.length >= 3) {
+          fields.add(FieldDef(
+            name: name,
+            type: 'int', // Foreign key is int
+            isRelation: true,
+            relationType: 'belongsTo',
+            relatedModel: parts[2],
+          ));
+        } else if (typeOrRelation == 'tomany' && parts.length >= 3) {
+          fields.add(FieldDef(
+            name: name,
+            type: 'List<${parts[2]}>',
+            isRelation: true,
+            relationType: 'toMany',
+            relatedModel: parts[2],
+          ));
+        } else {
+          fields.add(FieldDef(name: name, type: _normalizeType(parts[1])));
+        }
       }
     }
     return fields;
@@ -168,6 +208,17 @@ class ScaffoldCommand extends Command<int> {
       case 'bool':
       case 'boolean':
         return 'bool';
+      case 'text':
+        return 'String'; // Long text
+      case 'email':
+        return 'String'; // Email (validated in UI)
+      case 'image':
+        return 'String?'; // Image URL/path
+      case 'attachment':
+        return 'String?'; // File attachment URL/path
+      case 'datetime':
+      case 'date':
+        return 'DateTime?';
       default:
         return type;
     }
@@ -508,65 +559,174 @@ $inputFields
 
   // ==================== ORM Model Generation ====================
 
-  Future<void> _generateOrmModel(String serverDir, String className, String moduleName, List<FieldDef> fields) async {
+  Future<void> _generateOrmModel(
+    String modelsDir,
+    String className,
+    String moduleName,
+    List<FieldDef> allFields,
+    List<FieldDef> belongsToFields,
+    List<FieldDef> toManyFields,
+  ) async {
     final singular = _singularize(moduleName);
 
-    // Build field declarations
-    final fieldDeclarations = fields.map((f) =>
-      '  ${f.type}? ${f.name};').join('\n');
+    // Filter out relation fields for regular field handling
+    final regularFields = allFields.where((f) => !f.isRelation).toList();
+
+    // Build field declarations (regular fields + belongsTo foreign keys)
+    final fieldDecls = <String>[];
+    for (final f in regularFields) {
+      fieldDecls.add('  ${f.type}${f.type.endsWith('?') ? '' : '?'} ${f.name};');
+    }
+    for (final f in belongsToFields) {
+      fieldDecls.add('  int? ${f.foreignKey};'); // Foreign key column
+    }
+    final fieldDeclarations = fieldDecls.join('\n');
 
     // Build constructor params
-    final constructorParams = [
-      'int? id',
-      ...fields.map((f) => 'this.${f.name}'),
-      'this.createdAt',
-      'this.updatedAt',
-    ].join(', ');
+    final constructorParams = <String>['int? id'];
+    for (final f in regularFields) {
+      constructorParams.add('this.${f.name}');
+    }
+    for (final f in belongsToFields) {
+      constructorParams.add('this.${f.foreignKey}');
+    }
+    constructorParams.addAll(['this.createdAt', 'this.updatedAt']);
 
-    // Build toMap
-    final toMapFields = fields.map((f) {
+    // Build toMap (regular + foreign keys)
+    final toMapLines = <String>[];
+    for (final f in regularFields) {
+      final snakeName = _toSnakeCase(f.name);
       if (f.type == 'bool') {
-        return "      '${_toSnakeCase(f.name)}': ${f.name} == true ? 1 : 0,";
+        toMapLines.add("      '$snakeName': ${f.name} == true ? 1 : 0,");
+      } else {
+        toMapLines.add("      '$snakeName': ${f.name},");
       }
-      return "      '${_toSnakeCase(f.name)}': ${f.name},";
-    }).join('\n');
+    }
+    for (final f in belongsToFields) {
+      toMapLines.add("      '${f.foreignKey}': ${f.foreignKey},");
+    }
+    final toMapFields = toMapLines.join('\n');
 
     // Build fromRow
-    final fromRowFields = fields.map((f) {
+    final fromRowLines = <String>[];
+    for (final f in regularFields) {
       final snakeName = _toSnakeCase(f.name);
       if (f.type == 'bool') {
-        return "      ${f.name}: (row['$snakeName'] as int?) == 1,";
+        fromRowLines.add("      ${f.name}: (row['$snakeName'] as int?) == 1,");
       } else if (f.type == 'int') {
-        return "      ${f.name}: row['$snakeName'] as int?,";
+        fromRowLines.add("      ${f.name}: row['$snakeName'] as int?,");
       } else if (f.type == 'double') {
-        return "      ${f.name}: (row['$snakeName'] as num?)?.toDouble(),";
+        fromRowLines.add("      ${f.name}: (row['$snakeName'] as num?)?.toDouble(),");
+      } else if (f.type == 'DateTime?') {
+        fromRowLines.add("      ${f.name}: row['$snakeName'] != null ? DateTime.tryParse(row['$snakeName'] as String) : null,");
+      } else {
+        fromRowLines.add("      ${f.name}: row['$snakeName'] as ${f.type}?,");
       }
-      return "      ${f.name}: row['$snakeName'] as ${f.type}?,";
-    }).join('\n');
+    }
+    for (final f in belongsToFields) {
+      fromRowLines.add("      ${f.foreignKey}: row['${f.foreignKey}'] as int?,");
+    }
+    final fromRowFields = fromRowLines.join('\n');
 
     // Build schema columns
-    final schemaColumns = fields.map((f) {
+    final schemaLines = <String>[];
+    for (final f in regularFields) {
       final snakeName = _toSnakeCase(f.name);
       final colType = _dartTypeToColumn(f.type);
-      return "        '$snakeName': $colType,";
-    }).join('\n');
+      schemaLines.add("        '$snakeName': $colType,");
+    }
+    for (final f in belongsToFields) {
+      final relatedTable = _pluralize(_singularize(f.relatedModel!).toLowerCase());
+      schemaLines.add("        '${f.foreignKey}': Column.integer().nullable().references('$relatedTable'),");
+    }
+    final schemaColumns = schemaLines.join('\n');
+
+    // Build relation accessors
+    final relationAccessors = <String>[];
+    for (final f in belongsToFields) {
+      relationAccessors.add("  /// Get the related ${f.relatedModel} (use .with_(['${f.name}']) to load)");
+      relationAccessors.add("  ${f.relatedModel}? get ${f.name} => getRelation<${f.relatedModel}>('${f.name}');");
+    }
+    for (final f in toManyFields) {
+      relationAccessors.add("  /// Get related ${f.relatedModel} list (use .with_(['${f.name}']) to load)");
+      relationAccessors.add("  List<${f.relatedModel}> get ${f.name} => getRelation<List<${f.relatedModel}>>('${f.name}') ?? [];");
+    }
+    final relationAccessorsCode = relationAccessors.join('\n');
+
+    // Build relation registrations
+    final relationRegs = <String>[];
+    for (final f in belongsToFields) {
+      relationRegs.add('''
+    Entity.registerRelation<$className>(
+      '${f.name}',
+      BelongsTo<${f.relatedModel}>(foreignKey: '${f.foreignKey}'),
+    );''');
+    }
+    for (final f in toManyFields) {
+      final pivotTable = '${singular}_${_singularize(f.name).toLowerCase()}s';
+      final relatedSingular = _singularize(f.relatedModel!).toLowerCase();
+      relationRegs.add('''
+    Entity.registerRelation<$className>(
+      '${f.name}',
+      BelongsToMany<${f.relatedModel}>(
+        pivotTable: '$pivotTable',
+        foreignPivotKey: '${singular}_id',
+        relatedPivotKey: '${relatedSingular}_id',
+      ),
+    );
+    Entity.registerPivotTable('$pivotTable', schema: {
+      '${singular}_id': Column.integer().notNull().references('$moduleName'),
+      '${relatedSingular}_id': Column.integer().notNull().references('${_pluralize(relatedSingular)}'),
+    }, primaryKey: ['${singular}_id', '${relatedSingular}_id']);''');
+    }
+    final relationRegistrations = relationRegs.join('\n');
+
+    // Build toJson with relations
+    final toJsonLines = <String>["      'id': _id,"];
+    for (final f in regularFields) {
+      toJsonLines.add("      '${f.name}': ${f.name},");
+    }
+    for (final f in belongsToFields) {
+      toJsonLines.add("      '${f.foreignKey}': ${f.foreignKey},");
+      toJsonLines.add("      '${f.name}': ${f.name}?.toJson(),");
+    }
+    for (final f in toManyFields) {
+      toJsonLines.add("      '${f.name}': ${f.name}.map((e) => e.toJson()).toList(),");
+    }
+    toJsonLines.add("      'createdAt': createdAt?.toIso8601String(),");
+    toJsonLines.add("      'updatedAt': updatedAt?.toIso8601String(),");
+    final toJsonFields = toJsonLines.join('\n');
+
+    // Build imports for related models
+    final imports = <String>["import 'package:duxt_orm/duxt_orm.dart';"];
+    for (final f in belongsToFields) {
+      final relatedFile = _singularize(f.relatedModel!).toLowerCase();
+      imports.add("import '$relatedFile.dart';");
+    }
+    for (final f in toManyFields) {
+      final relatedFile = _singularize(f.relatedModel!).toLowerCase();
+      imports.add("import '$relatedFile.dart';");
+    }
+    final importsCode = imports.toSet().join('\n');
 
     final content = '''
-import 'package:duxt_orm/duxt_orm.dart';
+$importsCode
 
-class $className extends Model {
+class $className extends Entity {
   int? _id;
 $fieldDeclarations
   DateTime? createdAt;
   DateTime? updatedAt;
 
-  $className({$constructorParams}) : _id = id;
+  $className({${constructorParams.join(', ')}}) : _id = id;
 
   @override
   dynamic get id => _id;
 
   @override
   set id(dynamic value) => _id = value as int?;
+
+$relationAccessorsCode
 
   @override
   Map<String, dynamic> toMap() => {
@@ -585,15 +745,12 @@ $fromRowFields
     );
 
   Map<String, dynamic> toJson() => {
-      'id': _id,
-${fields.map((f) => "      '${f.name}': ${f.name},").join('\n')}
-      'createdAt': createdAt?.toIso8601String(),
-      'updatedAt': updatedAt?.toIso8601String(),
+$toJsonFields
     };
 
   /// Register this model with DuxtOrm.
   static void register() {
-    Model.registerModel<$className>(
+    Entity.registerModel<$className>(
       $className.fromRow,
       schema: {
         'id': Column.integer().primaryKey().autoIncrement(),
@@ -602,26 +759,32 @@ $schemaColumns
         'updated_at': Column.dateTime().nullable(),
       },
     );
+$relationRegistrations
   }
 
   @override
-  String toString() => '$className(id: \$_id${fields.isNotEmpty ? ', ${fields.first.name}: \$${fields.first.name}' : ''})';
+  String toString() => '$className(id: \$_id${regularFields.isNotEmpty ? ', ${regularFields.first.name}: \$${regularFields.first.name}' : ''})';
 }
 ''';
-    await File(p.join(serverDir, '$singular.dart')).writeAsString(content);
+    await File(p.join(modelsDir, '$singular.dart')).writeAsString(content);
   }
 
   Future<void> _generateOrmRoutes(String routesDir, String className, String moduleName, String singular, List<FieldDef> fields) async {
+    // Filter for regular fields only (not relations)
+    final regularFields = fields.where((f) => !f.isRelation).toList();
+
     final content = '''
 import 'package:duxt/server.dart';
 import 'package:duxt_orm/duxt_orm.dart';
-import '../models/$singular.dart';
+import 'package:blog_app/models/$singular.dart';
 
 /// Register $moduleName API routes
 void register${className}Routes(DuxtServer server) {
+  final ${singular}s = Model<$className>();
+
   // GET /api/$moduleName - List all
   server.get('/api/$moduleName', (req) async {
-    final items = await Model.all<$className>();
+    final items = await ${singular}s.all();
     return json({'$moduleName': items.map((e) => e.toJson()).toList()});
   });
 
@@ -632,7 +795,7 @@ void register${className}Routes(DuxtServer server) {
       return json({'error': 'Invalid ID'}, statusCode: 400);
     }
 
-    final item = await Model.find<$className>(id);
+    final item = await ${singular}s.find(id);
     if (item == null) {
       return json({'error': 'Not found'}, statusCode: 404);
     }
@@ -660,14 +823,14 @@ void register${className}Routes(DuxtServer server) {
       return json({'error': 'Invalid ID'}, statusCode: 400);
     }
 
-    final item = await Model.find<$className>(id);
+    final item = await ${singular}s.find(id);
     if (item == null) {
       return json({'error': 'Not found'}, statusCode: 404);
     }
 
     final body = req.body as Map<String, dynamic>?;
     if (body != null) {
-${fields.map((f) => "      if (body.containsKey('${f.name}')) item.${f.name} = body['${f.name}'] as ${f.type}?;").join('\n')}
+${regularFields.map((f) => "      if (body.containsKey('${f.name}')) item.${f.name} = body['${f.name}'] as ${f.type}?;").join('\n')}
     }
 
     await item.save();
@@ -681,7 +844,7 @@ ${fields.map((f) => "      if (body.containsKey('${f.name}')) item.${f.name} = b
       return json({'error': 'Invalid ID'}, statusCode: 400);
     }
 
-    final item = await Model.find<$className>(id);
+    final item = await ${singular}s.find(id);
     if (item == null) {
       return json({'error': 'Not found'}, statusCode: 404);
     }
@@ -694,7 +857,23 @@ ${fields.map((f) => "      if (body.containsKey('${f.name}')) item.${f.name} = b
     await File(p.join(routesDir, '$moduleName.dart')).writeAsString(content);
   }
 
-  String _dartTypeToColumn(String dartType) {
+  String _dartTypeToColumn(String dartType, {String? originalType}) {
+    // Check original type for more context
+    if (originalType != null) {
+      switch (originalType.toLowerCase()) {
+        case 'text':
+          return 'Column.text().nullable()';
+        case 'email':
+          return 'Column.string(255).nullable()';
+        case 'image':
+        case 'attachment':
+          return 'Column.string(500).nullable()';
+        case 'datetime':
+        case 'date':
+          return 'Column.dateTime().nullable()';
+      }
+    }
+
     switch (dartType) {
       case 'int':
         return 'Column.integer().nullable()';
@@ -702,6 +881,10 @@ ${fields.map((f) => "      if (body.containsKey('${f.name}')) item.${f.name} = b
         return 'Column.decimal(10, 2).nullable()';
       case 'bool':
         return 'Column.boolean().defaultValue(false)';
+      case 'DateTime?':
+        return 'Column.dateTime().nullable()';
+      case 'String?':
+        return 'Column.string(500).nullable()';
       case 'String':
       default:
         return 'Column.string(255).nullable()';
@@ -746,8 +929,28 @@ ${fields.map((f) => "      if (body.containsKey('${f.name}')) item.${f.name} = b
   }
 }
 
+/// Field definition with optional relation info
 class FieldDef {
   final String name;
   final String type;
-  FieldDef({required this.name, required this.type});
+  final bool isRelation;
+  final String? relationType; // 'belongsTo' or 'toMany'
+  final String? relatedModel;
+
+  FieldDef({
+    required this.name,
+    required this.type,
+    this.isRelation = false,
+    this.relationType,
+    this.relatedModel,
+  });
+
+  /// Check if this is a belongsTo relation
+  bool get isBelongsTo => relationType == 'belongsTo';
+
+  /// Check if this is a toMany (many-to-many) relation
+  bool get isToMany => relationType == 'toMany';
+
+  /// Get the foreign key column name for belongsTo
+  String get foreignKey => '${name}_id';
 }

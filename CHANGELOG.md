@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-02-03
+
+### Added
+- **Scaffold relation syntax** - Generate models with relationships
+  - `belongsTo:Model` - Creates foreign key and BelongsTo relation
+  - `toMany:Model` - Creates pivot table and BelongsToMany relation
+  - Example: `duxt scaffold posts category:belongsTo:Category tags:toMany:Tag --orm`
+- **New field types** for scaffold command
+  - `text` - TEXT column for long content
+  - `email` - VARCHAR with email validation in UI
+  - `image` - Image upload field (VARCHAR 500)
+  - `attachment` - File upload field (VARCHAR 500)
+  - `datetime` - DateTime picker
+- **`--no-api` flag** - Generate SSR-only models without REST endpoints
+- **Tag model template** - Many-to-many relationship support with Posts
+- **Interactive blog tutorial** - `/blog` shows step-by-step scaffolding guide
+- **`duxt docs` command** - Documentation generation
+  - `duxt docs generate` - Generate API docs from code comments
+  - `duxt docs page <name>` - Create documentation page
+  - `duxt docs tutorial <name>` - Create tutorial with template
+
+### Changed
+- Blog template now includes Tag model with BelongsToMany relation
+- Post model template includes `attach()`, `detach()`, `sync()` for tags
+- Updated blog index to show interactive tutorial by default
+
 ## [0.4.0] - 2026-02-02
 
 ### Added
@@ -12,9 +38,16 @@ All notable changes to this project will be documented in this file.
   - `blog` - Focused blog with DuxtORM backend
   - `saas` - Coming soon (requires duxt_auth)
 - Interactive template selection when no `--template` flag provided
+- **Blog template now demonstrates DuxtORM relations**
+  - Post → Category relationship with `BelongsTo`
+  - Category → Posts relationship with `HasMany`
+  - Eager loading with `.with_(['category'])` to prevent N+1 queries
+  - Category badges displayed on blog post cards
 
 ### Changed
 - `duxt create` now shows both template and mode selection
+- Blog template includes Category model and API
+- Posts API now returns category data via eager loading
 
 ## [0.3.11] - 2026-01-31
 

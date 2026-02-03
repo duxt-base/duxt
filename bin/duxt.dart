@@ -16,8 +16,9 @@ import 'package:duxt/src/cli/doctor_command.dart';
 import 'package:duxt/src/cli/clean_command.dart';
 import 'package:duxt/src/cli/update_command.dart';
 import 'package:duxt/src/cli/version_command.dart';
+import 'package:duxt/src/cli/docs_command.dart';
 
-const version = '0.3.7';
+const version = '0.4.1';
 
 void main(List<String> args) async {
   // Handle version flag
@@ -55,6 +56,11 @@ Generators:
   scaffold <name>      Generate full module with CRUD
   d <type> <name>      Delete module, page, component, model, or api
 
+Documentation:
+  docs generate        Generate API docs from code
+  docs page <name>     Create a documentation page
+  docs tutorial <name> Create a tutorial page
+
 Utilities:
   info                 Show project information
   doctor               Show environment and project diagnostics
@@ -75,6 +81,7 @@ Run "duxt help <command>" for more information.
     ..addCommand(InfoCommand())
     ..addCommand(DoctorCommand())
     ..addCommand(CleanCommand())
+    ..addCommand(DocsCommand())
     ..addCommand(UpdateCommand(version))
     ..addCommand(VersionCommand(version));
 

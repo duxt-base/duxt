@@ -5,7 +5,9 @@ import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
+import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:yaml/yaml.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import '../core/router_generator.dart';
 import '../core/watcher.dart';
 
@@ -117,6 +119,11 @@ class DevCommand extends Command<int> {
     Process? jasprProcess;
     Process? tailwindProcess;
     HttpServer? proxyServer;
+    final devToolsPort = port + 4; // WebSocket port for dev tools
+    final devTools = _DevTools(devToolsPort);
+
+    // Start dev tools WebSocket server
+    await devTools.start();
 
     final hasApi = !noApi && File('$projectDir/server/main.dart').existsSync();
 
@@ -197,23 +204,26 @@ class DevCommand extends Command<int> {
 
         if (verbose) {
           print('\x1B[34m[web]\x1B[0m $line');
-        } else {
-          // Show spinner during build, only print important messages
-          if (line.contains('Starting web compiler') || line.contains('Building web assets')) {
-            if (!isBuilding) {
-              isBuilding = true;
-              buildSpinner.start();
-            }
-          } else if (line.contains('Done building web assets')) {
-            if (isBuilding) {
-              buildSpinner.stop();
-              isBuilding = false;
-            }
-          } else if (line.contains('[ERROR]') || line.contains('Error')) {
-            buildSpinner.stop();
-            isBuilding = false;
-            print('\x1B[31m[web]\x1B[0m $line');
+        }
+
+        // Detect build events regardless of verbose mode
+        if (line.contains('Rebuilding web assets') || line.contains('Building web assets') || line.contains('About to build')) {
+          if (!isBuilding) {
+            isBuilding = true;
+            if (!verbose) buildSpinner.start();
+            devTools.broadcast('building', 'Building...', details: 'Compiling web assets');
           }
+        } else if (line.contains('Rebuilt web assets') || line.contains('Done building web assets') || line.contains('Server application reloaded')) {
+          if (isBuilding) {
+            if (!verbose) buildSpinner.stop();
+            isBuilding = false;
+            devTools.broadcast('success', 'Hot Reloaded', details: 'Build complete');
+          }
+        } else if (line.contains('[ERROR]') || (line.contains('Error') && !line.contains('no-op'))) {
+          if (!verbose) buildSpinner.stop();
+          isBuilding = false;
+          print('\x1B[31m[web]\x1B[0m $line');
+          devTools.broadcast('error', 'Build Error', details: line.length > 80 ? '${line.substring(0, 80)}...' : line);
         }
 
         // Signal ready when server is serving
@@ -231,6 +241,7 @@ class DevCommand extends Command<int> {
           buildSpinner.stop();
           isBuilding = false;
           print('\x1B[31m[web]\x1B[0m $line');
+          devTools.broadcast('error', 'Error', details: line.length > 80 ? '${line.substring(0, 80)}...' : line);
         }
       }
     });
@@ -244,7 +255,7 @@ class DevCommand extends Command<int> {
     // Start proxy server on main port
     final handler = const shelf.Pipeline()
         .addMiddleware(_corsMiddleware())
-        .addHandler((request) => _proxyHandler(request, apiPort, jasprPort, hasApi));
+        .addHandler((request) => _proxyHandler(request, apiPort, jasprPort, hasApi, devToolsPort));
 
     proxyServer = await shelf_io.serve(handler, 'localhost', port);
 
@@ -262,12 +273,13 @@ class DevCommand extends Command<int> {
     print('  \x1B[1mMode:\x1B[0m   $modeColor$modeLabel\x1B[0m');
     print('');
     print('\x1B[90mPorts:\x1B[0m');
-    print('  \x1B[90mProxy:\x1B[0m  $port');
+    print('  \x1B[90mProxy:\x1B[0m    $port');
     if (hasApi) {
-      print('  \x1B[90mAPI:\x1B[0m    $apiPort');
+      print('  \x1B[90mAPI:\x1B[0m      $apiPort');
     }
-    print('  \x1B[90mJaspr:\x1B[0m  $jasprPort');
-    print('  \x1B[90mWebdev:\x1B[0m $webdevPort');
+    print('  \x1B[90mJaspr:\x1B[0m    $jasprPort');
+    print('  \x1B[90mWebdev:\x1B[0m   $webdevPort');
+    print('  \x1B[90mDevTools:\x1B[0m $devToolsPort');
     print('');
     print('\x1B[90mPress Ctrl+C to stop\x1B[0m');
     print('');
@@ -278,6 +290,7 @@ class DevCommand extends Command<int> {
     print('');
     print('\x1B[90mShutting down...\x1B[0m');
 
+    await devTools.stop();
     await proxyServer.close();
     await watcher.stop();
     tailwindProcess?.kill();
@@ -312,9 +325,11 @@ class DevCommand extends Command<int> {
     int apiPort,
     int jasprPort,
     bool hasApi,
+    int devToolsPort,
   ) async {
     final path = request.url.path;
-    final targetPort = (hasApi && path.startsWith('api/')) ? apiPort : jasprPort;
+    final isApi = hasApi && path.startsWith('api/');
+    final targetPort = isApi ? apiPort : jasprPort;
 
     try {
       final client = HttpClient();
@@ -340,7 +355,7 @@ class DevCommand extends Command<int> {
       final proxyResponse = await proxyRequest.close();
 
       // Read response body as bytes to handle binary content
-      final responseBytes = await proxyResponse.fold<List<int>>(
+      var responseBytes = await proxyResponse.fold<List<int>>(
         <int>[],
         (previous, chunk) => previous..addAll(chunk),
       );
@@ -354,21 +369,174 @@ class DevCommand extends Command<int> {
         }
       });
 
+      // Inject dev tools script into HTML responses
+      final contentType = headers['content-type'] ?? '';
+      if (contentType.contains('text/html')) {
+        var html = utf8.decode(responseBytes);
+        final script = _DevTools.overlayScript.replaceAll('__DEVTOOLS_PORT__', devToolsPort.toString());
+        // Inject before </body>
+        if (html.contains('</body>')) {
+          html = html.replaceFirst('</body>', '$script</body>');
+          responseBytes = utf8.encode(html);
+          // Update content-length
+          headers['content-length'] = responseBytes.length.toString();
+        }
+      }
+
       return shelf.Response(
         proxyResponse.statusCode,
         body: responseBytes,
         headers: headers,
       );
     } catch (e) {
-      final isApi = path.startsWith('api/');
-      return shelf.Response.internalServerError(
-        body: jsonEncode({
-          'error': 'Proxy error: $e',
-          'target': isApi ? 'API server' : 'Jaspr server',
-        }),
-        headers: {'Content-Type': 'application/json'},
+      // For API requests, return JSON error
+      if (isApi) {
+        return shelf.Response.internalServerError(
+          body: jsonEncode({
+            'error': 'API server not available',
+            'message': 'The API server is starting up. Please try again.',
+          }),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+
+      // For asset requests (.js, .css, etc.), return 503 so browser retries
+      final ext = p.extension(path).toLowerCase();
+      if (['.js', '.css', '.map', '.json', '.woff', '.woff2', '.ttf', '.png', '.jpg', '.svg', '.ico'].contains(ext)) {
+        return shelf.Response(
+          503,
+          body: 'Server starting...',
+          headers: {
+            'Content-Type': 'text/plain',
+            'Retry-After': '2',
+          },
+        );
+      }
+
+      // For HTML document requests, return a nice loading page
+      return shelf.Response.ok(
+        _loadingPageHtml(devToolsPort),
+        headers: {'Content-Type': 'text/html'},
       );
     }
+  }
+
+  /// Loading page HTML shown while Jaspr is building
+  String _loadingPageHtml(int devToolsPort) {
+    return '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Building... | Duxt</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #e2e8f0;
+    }
+    .container { text-align: center; padding: 2rem; }
+    .logo {
+      font-size: 2.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 2rem;
+    }
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid rgba(6, 182, 212, 0.2);
+      border-top-color: #06b6d4;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1.5rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h1 { font-size: 1.25rem; font-weight: 500; margin-bottom: 0.5rem; }
+    p { color: #94a3b8; font-size: 0.875rem; }
+    .status {
+      margin-top: 2rem;
+      padding: 1rem;
+      background: rgba(6, 182, 212, 0.1);
+      border-radius: 8px;
+      border: 1px solid rgba(6, 182, 212, 0.2);
+    }
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      background: #eab308;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: pulse 1.5s ease infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">duxt</div>
+    <div class="spinner"></div>
+    <h1>Building your app...</h1>
+    <p>The development server is compiling your code.</p>
+    <div class="status">
+      <span class="status-dot"></span>
+      <span id="status-text">Connecting to build server...</span>
+    </div>
+  </div>
+  <script>
+    const statusEl = document.getElementById('status-text');
+    const wsPort = $devToolsPort;
+    let connected = false;
+
+    function tryConnect() {
+      const ws = new WebSocket('ws://localhost:' + wsPort);
+      ws.onopen = () => {
+        connected = true;
+        statusEl.textContent = 'Connected - waiting for build...';
+      };
+      ws.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'success' || data.type === 'reload') {
+            statusEl.textContent = 'Build complete! Reloading...';
+            setTimeout(() => location.reload(), 500);
+          } else if (data.type === 'building') {
+            statusEl.textContent = data.details || 'Compiling...';
+          } else if (data.type === 'error') {
+            statusEl.textContent = 'Build error: ' + (data.details || 'Check terminal');
+          }
+        } catch (err) {}
+      };
+      ws.onclose = () => {
+        if (!connected) {
+          statusEl.textContent = 'Server starting...';
+          setTimeout(tryConnect, 1000);
+        }
+      };
+      ws.onerror = () => {};
+    }
+
+    tryConnect();
+
+    // Also try refreshing periodically as fallback
+    setTimeout(function checkReady() {
+      fetch(location.href, { method: 'HEAD' })
+        .then(r => { if (r.ok) location.reload(); else setTimeout(checkReady, 2000); })
+        .catch(() => setTimeout(checkReady, 2000));
+    }, 3000);
+  </script>
+</body>
+</html>
+''';
   }
 
   /// Compile Tailwind CSS once
@@ -592,4 +760,182 @@ class _Spinner {
     _timer = null;
     stdout.write('\r\x1B[K'); // Clear the spinner line
   }
+}
+
+/// Dev tools overlay for showing build status toasts
+class _DevTools {
+  final int port;
+  final List<WebSocketChannel> _clients = [];
+  HttpServer? _server;
+
+  _DevTools(this.port);
+
+  /// Start the WebSocket server
+  Future<void> start() async {
+    final handler = webSocketHandler((WebSocketChannel webSocket) {
+      _clients.add(webSocket);
+
+      // Send welcome message
+      webSocket.sink.add(jsonEncode({
+        'type': 'connected',
+        'message': 'Duxt DevTools connected',
+      }));
+
+      webSocket.stream.listen(
+        (_) {},
+        onDone: () => _clients.remove(webSocket),
+        onError: (_) => _clients.remove(webSocket),
+      );
+    });
+
+    _server = await shelf_io.serve(handler, 'localhost', port);
+  }
+
+  /// Broadcast a message to all connected clients
+  void broadcast(String type, String message, {String? details}) {
+    final payload = jsonEncode({
+      'type': type,
+      'message': message,
+      if (details != null) 'details': details,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    });
+
+    for (final client in _clients.toList()) {
+      try {
+        client.sink.add(payload);
+      } catch (_) {
+        _clients.remove(client);
+      }
+    }
+  }
+
+  /// Stop the WebSocket server
+  Future<void> stop() async {
+    for (final client in _clients) {
+      await client.sink.close();
+    }
+    _clients.clear();
+    await _server?.close();
+  }
+
+  /// JavaScript to inject into HTML for dev overlay (uses inline styles for reliability)
+  static String get overlayScript => r'''
+<script>
+(function() {
+  const DEVTOOLS_WS_PORT = '__DEVTOOLS_PORT__';
+
+  // All styles inline to avoid Tailwind compilation issues
+  const styles = `
+    @keyframes duxt-slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes duxt-slide-out { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+    @keyframes duxt-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    #duxt-devtools { position: fixed; bottom: 16px; right: 16px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; font-family: system-ui, -apple-system, sans-serif; font-size: 14px; }
+    #duxt-badge { position: fixed; bottom: 16px; left: 16px; z-index: 99998; display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 6px; background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%); color: white; font-size: 12px; font-weight: 600; box-shadow: 0 4px 14px rgba(6, 182, 212, 0.35); cursor: pointer; transition: all 0.2s ease; }
+    #duxt-badge:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(6, 182, 212, 0.45); }
+    .duxt-toast { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 280px; max-width: 360px; }
+    .duxt-toast.slide-in { animation: duxt-slide-in 0.3s ease; }
+    .duxt-toast.slide-out { animation: duxt-slide-out 0.3s ease forwards; }
+    .duxt-toast.success { background: #22c55e; color: white; }
+    .duxt-toast.building { background: #eab308; color: white; }
+    .duxt-toast.error { background: #ef4444; color: white; }
+    .duxt-toast.info { background: #3b82f6; color: white; }
+    .duxt-toast-icon { flex-shrink: 0; margin-top: 2px; }
+    .duxt-toast-icon svg { width: 16px; height: 16px; }
+    .duxt-toast-icon.spin svg { animation: duxt-spin 1s linear infinite; }
+    .duxt-toast-content { flex: 1; min-width: 0; }
+    .duxt-toast-title { font-weight: 500; }
+    .duxt-toast-details { font-size: 12px; opacity: 0.9; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  `;
+
+  // Create container
+  const container = document.createElement('div');
+  container.id = 'duxt-devtools';
+
+  // Add styles
+  const styleEl = document.createElement('style');
+  styleEl.textContent = styles;
+  document.head.appendChild(styleEl);
+  document.body.appendChild(container);
+
+  // Add Duxt badge
+  const badge = document.createElement('div');
+  badge.id = 'duxt-badge';
+  badge.innerHTML = '<svg style="width:14px;height:14px" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg><span>DEV</span>';
+  badge.title = 'Duxt Development Mode';
+  document.body.appendChild(badge);
+
+  // Toast management
+  let toasts = [];
+  let buildingToast = null;
+
+  // Icons as SVG strings
+  const icons = {
+    success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>',
+    building: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>',
+    error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>',
+    info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg>'
+  };
+
+  function showToast(type, message, details, duration = 3000) {
+    if (type !== 'building' && buildingToast) {
+      removeToast(buildingToast);
+      buildingToast = null;
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'duxt-toast slide-in ' + type;
+    const iconClass = type === 'building' ? 'duxt-toast-icon spin' : 'duxt-toast-icon';
+    toast.innerHTML = '<div class="' + iconClass + '">' + (icons[type] || icons.info) + '</div>' +
+      '<div class="duxt-toast-content">' +
+        '<div class="duxt-toast-title">' + message + '</div>' +
+        (details ? '<div class="duxt-toast-details">' + details + '</div>' : '') +
+      '</div>';
+    container.appendChild(toast);
+    toasts.push(toast);
+
+    if (type === 'building') {
+      buildingToast = toast;
+      return toast;
+    }
+
+    setTimeout(() => removeToast(toast), duration);
+    return toast;
+  }
+
+  function removeToast(toast) {
+    if (!toast || !toast.parentNode) return;
+    toast.classList.remove('slide-in');
+    toast.classList.add('slide-out');
+    setTimeout(() => {
+      toast.remove();
+      toasts = toasts.filter(t => t !== toast);
+    }, 300);
+  }
+
+  // WebSocket connection
+  let ws;
+  let reconnectAttempts = 0;
+
+  function connect() {
+    ws = new WebSocket('ws://localhost:' + DEVTOOLS_WS_PORT);
+    ws.onopen = () => { reconnectAttempts = 0; console.log('[Duxt DevTools] Connected'); };
+    ws.onmessage = (e) => { try { handleMessage(JSON.parse(e.data)); } catch(err) {} };
+    ws.onclose = () => { if (reconnectAttempts < 5) { reconnectAttempts++; setTimeout(connect, 1000 * reconnectAttempts); } };
+    ws.onerror = () => {};
+  }
+
+  function handleMessage(data) {
+    switch (data.type) {
+      case 'building': showToast('building', data.message || 'Building...', data.details); break;
+      case 'success': showToast('success', data.message || 'Ready!', data.details, 2500); break;
+      case 'reload': showToast('success', data.message || 'Hot Reloaded', data.details, 2000); setTimeout(() => location.reload(), 600); break;
+      case 'error': showToast('error', data.message || 'Build Error', data.details, 6000); break;
+      case 'info': showToast('info', data.message || 'Info', data.details); break;
+    }
+  }
+
+  connect();
+})();
+</script>
+''';
 }

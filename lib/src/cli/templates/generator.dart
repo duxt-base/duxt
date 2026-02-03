@@ -53,7 +53,8 @@ class TemplateGenerator {
       'lib/home/pages',
       'lib/blog/pages',
       'lib/shared/layouts',
-      'server', 'server/api', 'server/models',
+      'lib/models',
+      'server', 'server/api',
       'web',
     ];
 
@@ -72,7 +73,7 @@ class TemplateGenerator {
     await _write(dir, 'lib/app.dart', _blogAppTemplate);
     await _write(dir, 'lib/main.client.dart', mainClientTemplate);
     if (mode == 'static' || mode == 'server') {
-      await _write(dir, 'lib/main.server.dart', mainServerTemplate(projectName));
+      await _write(dir, 'lib/main.server.dart', blogMainServerTemplate(projectName));
     }
 
     // Layouts
@@ -85,15 +86,24 @@ class TemplateGenerator {
     await _write(dir, 'lib/blog/pages/index.dart', blogIndexTemplate);
     await _write(dir, 'lib/blog/pages/_slug_.dart', blogPostTemplate);
 
-    // Server (with DuxtORM)
-    await _write(dir, 'server/main.dart', serverMainTemplate);
-    await _write(dir, 'server/db.dart', dbTemplate);
-    await _write(dir, 'server/models/post.dart', postModelTemplate);
-    await _write(dir, 'server/api/posts.dart', postsApiTemplate);
+    // Models (shared between lib and server) - order matters for foreign keys
+    await _write(dir, 'lib/models/category.dart', categoryModelTemplate);
+    await _write(dir, 'lib/models/tag.dart', tagModelTemplate);
+    await _write(dir, 'lib/models/post.dart', postWithTagsModelTemplate);
+
+    // Server (with DuxtORM + relations + tags)
+    await _write(dir, 'server/main.dart', blogServerMainTemplate(projectName));
+    await _write(dir, 'server/db.dart', blogDbTemplate(projectName));
+    await _write(dir, 'server/api/categories.dart', categoriesApiTemplate(projectName));
+    await _write(dir, 'server/api/tags.dart', tagsApiTemplate(projectName));
+    await _write(dir, 'server/api/posts.dart', postsApiTemplate(projectName));
 
     // Web
     await _write(dir, 'web/styles.tw.css', tailwindTemplate);
     await _write(dir, 'web/main.client.dart', webMainClientTemplate(projectName));
+
+    // Environment sample
+    await _write(dir, '.env.sample', envSampleTemplate);
 
     // Docker
     await _write(dir, 'Dockerfile', dockerfileTemplate);
@@ -103,21 +113,31 @@ class TemplateGenerator {
 
   static void _printBlogSuccess(String projectName) {
     print('');
-    print('  \x1B[32m✓\x1B[0m Created blog project');
+    print('  \x1B[32m✓\x1B[0m Created blog project with DuxtORM');
     print('');
     print('  lib/');
     print('    ├── home/pages/index.dart     → /');
     print('    ├── blog/pages/');
-    print('    │   ├── index.dart            → /blog');
+    print('    │   ├── index.dart            → /blog (tutorial or SSR listing)');
     print('    │   └── _slug_.dart           → /blog/:slug');
+    print('    ├── models/');
+    print('    │   ├── category.dart');
+    print('    │   ├── tag.dart              (many-to-many with posts)');
+    print('    │   └── post.dart');
     print('    ├── shared/layouts/');
     print('    └── app.dart');
     print('');
     print('  server/                         (DuxtORM + API)');
     print('    ├── main.dart');
     print('    ├── db.dart');
-    print('    ├── models/post.dart');
-    print('    └── api/posts.dart');
+    print('    └── api/');
+    print('        ├── categories.dart');
+    print('        ├── tags.dart');
+    print('        └── posts.dart');
+    print('');
+    print('  \x1B[36mRelations:\x1B[0m');
+    print('    • Post belongsTo Category');
+    print('    • Post belongsToMany Tags (via post_tags pivot)');
     print('');
     print('  \x1B[36mDevelopment:\x1B[0m');
     print('    duxt dev                      Start dev server');
@@ -136,7 +156,8 @@ class TemplateGenerator {
       'lib/company/pages', 'lib/company/pages/team',
       'lib/blog/pages',
       'lib/shared/components', 'lib/shared/layouts',
-      'server', 'server/api', 'server/models',
+      'lib/models',
+      'server', 'server/api',
       'web',
     ];
 
@@ -188,15 +209,22 @@ class TemplateGenerator {
     await _write(dir, 'lib/blog/pages/index.dart', blogIndexTemplate);
     await _write(dir, 'lib/blog/pages/_slug_.dart', blogPostTemplate);  // Dynamic route: /blog/:slug
 
-    // Server (with DuxtORM)
-    await _write(dir, 'server/main.dart', serverMainTemplate);
-    await _write(dir, 'server/db.dart', dbTemplate);
-    await _write(dir, 'server/models/post.dart', postModelTemplate);
-    await _write(dir, 'server/api/posts.dart', postsApiTemplate);
+    // Models (shared between lib and server)
+    await _write(dir, 'lib/models/category.dart', categoryModelTemplate);
+    await _write(dir, 'lib/models/post.dart', postModelTemplate);
+
+    // Server (with DuxtORM + relations)
+    await _write(dir, 'server/main.dart', serverMainTemplate(projectName));
+    await _write(dir, 'server/db.dart', dbTemplate(projectName));
+    await _write(dir, 'server/api/categories.dart', categoriesApiTemplate(projectName));
+    await _write(dir, 'server/api/posts.dart', postsApiTemplate(projectName));
 
     // Web (no index.html - jaspr's Document handles this)
     await _write(dir, 'web/styles.tw.css', tailwindTemplate);
     await _write(dir, 'web/main.client.dart', webMainClientTemplate(projectName));
+
+    // Environment sample
+    await _write(dir, '.env.sample', envSampleTemplate);
 
     // Docker
     await _write(dir, 'Dockerfile', dockerfileTemplate);

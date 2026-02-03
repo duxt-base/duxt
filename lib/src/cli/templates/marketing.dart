@@ -312,7 +312,7 @@ class Features extends StatelessComponent {
   }) {
     return div(classes: 'p-8 bg-gray-800/50 rounded-2xl border border-gray-700', [
       div(classes: 'w-12 h-12 bg-cyan-900/30 rounded-lg flex items-center justify-center mb-6', [
-        DomComponent(
+        Component.element(
           tag: 'svg',
           attributes: {
             'class': 'w-6 h-6 text-cyan-400',
@@ -321,7 +321,7 @@ class Features extends StatelessComponent {
             'viewBox': '0 0 24 24',
           },
           children: [
-            DomComponent(
+            Component.element(
               tag: 'path',
               attributes: {
                 'stroke-linecap': 'round',

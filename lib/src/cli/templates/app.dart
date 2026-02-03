@@ -70,3 +70,46 @@ void main() {
   ));
 }
 ''';
+
+/// main.server.dart template for blog (with ORM initialization for SSR)
+String blogMainServerTemplate(String projectName) => '''
+import 'dart:io';
+import 'package:jaspr/dom.dart';
+import 'package:jaspr/server.dart';
+import 'package:duxt/duxt.dart';
+import 'package:duxt_orm/duxt_orm.dart';
+import 'app.dart';
+import 'models/category.dart';
+import 'models/post.dart';
+
+import 'main.server.options.dart';
+
+void main() async {
+  // Initialize ORM for SSR data fetching
+  Category.register();
+  Post.register();
+
+  final dataDir = Platform.environment['DATA_DIR'] ?? '.';
+  await DuxtOrm.init((
+    driver: 'sqlite',
+    host: '',
+    port: 0,
+    database: '',
+    username: '',
+    password: '',
+    path: '\$dataDir/app.db',
+    ssl: false,
+  ));
+
+  Api.configure(baseUrl: '/api');
+  Jaspr.initializeApp(options: defaultServerOptions);
+
+  runApp(Document(
+    title: '$projectName',
+    head: [
+      link(href: '/styles.css', rel: 'stylesheet'),
+    ],
+    body: App(),
+  ));
+}
+''';

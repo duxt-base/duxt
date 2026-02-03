@@ -5,14 +5,28 @@ import 'templates/generator.dart';
 
 /// Available rendering modes
 enum ProjectMode {
-  static('static', 'Static (SSG)', 'Pre-renders pages at build time. Best for blogs, docs, marketing sites.'),
-  server('server', 'Server (SSR)', 'Renders pages on each request. Best for dynamic content. (Coming Soon)'),
+  static('static', 'Static (SSG)', 'Pre-renders pages at build time. Best for marketing sites, docs.'),
+  server('server', 'Server (SSR)', 'Renders pages on each request. Best for dynamic content with database.'),
   client('client', 'Client (SPA)', 'Client-side only. Best for web apps. (Coming Soon)');
 
   final String value;
   final String label;
   final String description;
   const ProjectMode(this.value, this.label, this.description);
+
+  /// Get default mode for a template
+  static ProjectMode defaultForTemplate(ProjectTemplate template) {
+    switch (template) {
+      case ProjectTemplate.blog:
+        return ProjectMode.server; // Blog needs database access for SSR
+      case ProjectTemplate.saas:
+        return ProjectMode.server; // SaaS needs auth/database
+      case ProjectTemplate.marketing:
+      case ProjectTemplate.minimal:
+      case ProjectTemplate.defaultTemplate:
+        return ProjectMode.static; // Static content sites
+    }
+  }
 }
 
 /// Available project templates
@@ -178,63 +192,80 @@ class CreateCommand extends Command<int> {
         print('\x1B[31mInvalid choice. Using Default template.\x1B[0m');
       }
 
-      final selectedTemplate = ProjectTemplate.values[choice.clamp(1, ProjectTemplate.values.length) - 1];
+      final chosenTemplate = ProjectTemplate.values[choice.clamp(1, ProjectTemplate.values.length) - 1];
 
       // SaaS template requires duxt_auth
-      if (selectedTemplate == ProjectTemplate.saas) {
+      if (chosenTemplate == ProjectTemplate.saas) {
         print('');
         print('\x1B[33m!\x1B[0m SaaS template requires duxt_auth (coming soon). Using Default instead.');
         template = 'default';
       } else {
-        template = selectedTemplate.value;
+        template = chosenTemplate.value;
       }
     }
 
     // Mode selection
     final modeArg = argResults!['mode'] as String?;
+    final finalTemplate = ProjectTemplate.fromValue(template);
     String mode;
+    ProjectMode selectedMode;
 
     if (modeArg != null) {
-      // Non-interactive mode with --mode flag
-      mode = 'static'; // Only static is supported for now
+      // Explicit mode via --mode flag
+      selectedMode = ProjectMode.values.firstWhere(
+        (m) => m.value == modeArg,
+        orElse: () => ProjectMode.static,
+      );
+      mode = selectedMode.value;
+    } else if (templateArg != null) {
+      // Template specified via flag - use template's default mode, skip prompt
+      selectedMode = ProjectMode.defaultForTemplate(finalTemplate);
+      mode = selectedMode.value;
     } else {
-      // Interactive mode selection
+      // Interactive mode selection (only when no template flag)
+      final defaultMode = ProjectMode.defaultForTemplate(finalTemplate);
+      final defaultIndex = ProjectMode.values.indexOf(defaultMode);
+
       print('');
       print('  Select rendering mode:');
       print('');
       for (var i = 0; i < ProjectMode.values.length; i++) {
         final m = ProjectMode.values[i];
-        final isDisabled = m != ProjectMode.static;
-        final marker = i == 0 ? '\x1B[32m>\x1B[0m' : ' ';
+        final isDisabled = m == ProjectMode.client; // Only client mode disabled for now
+        final isDefault = i == defaultIndex;
+        final marker = isDefault ? '\x1B[32m>\x1B[0m' : ' ';
         final color = isDisabled ? '\x1B[90m' : '';
         final reset = isDisabled ? '\x1B[0m' : '';
-        print('  $marker ${i + 1}. $color${m.label}$reset');
+        final suffix = isDisabled ? ' (Coming Soon)' : (isDefault ? ' (Recommended)' : '');
+        print('  $marker ${i + 1}. $color${m.label}$suffix$reset');
         print('       $color${m.description}$reset');
       }
       print('');
 
-      stdout.write('  Enter choice [1]: ');
+      stdout.write('  Enter choice [${defaultIndex + 1}]: ');
       final input = stdin.readLineSync()?.trim() ?? '';
-      final choice = int.tryParse(input) ?? 1;
+      final choice = int.tryParse(input) ?? (defaultIndex + 1);
 
       if (choice < 1 || choice > ProjectMode.values.length) {
-        print('\x1B[31mInvalid choice. Using Static mode.\x1B[0m');
+        print('\x1B[31mInvalid choice. Using ${defaultMode.label}.\x1B[0m');
+        selectedMode = defaultMode;
+      } else {
+        selectedMode = ProjectMode.values[choice - 1];
       }
 
-      final selectedMode = ProjectMode.values[choice.clamp(1, ProjectMode.values.length) - 1];
-
-      // Only allow static mode for now
-      if (selectedMode != ProjectMode.static) {
+      // Only client mode is disabled for now
+      if (selectedMode == ProjectMode.client) {
         print('');
-        print('\x1B[33m!\x1B[0m ${selectedMode.label} is coming soon. Using Static mode instead.');
+        print('\x1B[33m!\x1B[0m ${selectedMode.label} is coming soon. Using ${defaultMode.label} instead.');
+        selectedMode = defaultMode;
       }
 
-      mode = ProjectMode.static.value;
+      mode = selectedMode.value;
     }
 
     print('');
-    print('  Mode: \x1B[36m${ProjectMode.static.label}\x1B[0m');
-    print('  Template: \x1B[36m${ProjectTemplate.fromValue(template).label}\x1B[0m');
+    print('  Mode: \x1B[36m${selectedMode.label}\x1B[0m');
+    print('  Template: \x1B[36m${finalTemplate.label}\x1B[0m');
     print('');
 
     try {
