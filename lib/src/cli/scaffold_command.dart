@@ -31,7 +31,8 @@ class ScaffoldCommand extends Command<int> {
   ScaffoldCommand() {
     argParser.addFlag('force', abbr: 'f', help: 'Overwrite existing files');
     argParser.addFlag('api-only', help: 'Only generate model and API');
-    argParser.addFlag('orm', help: 'Generate DuxtOrm server model with schema');
+    argParser.addFlag('orm', defaultsTo: true,
+      help: 'Generate DuxtOrm server model with schema (use --no-orm for client-only)');
     argParser.addFlag('api', defaultsTo: true,
       help: 'Generate REST API endpoints (use --no-api for SSR-only models)');
   }
@@ -124,31 +125,38 @@ class ScaffoldCommand extends Command<int> {
 
       if (!apiOnly) {
         // 3. Generate List Page (with Create modal)
-        await _generateListPage(moduleDir, moduleName, singularClass, fields, packageName);
+        await _generateListPage(moduleDir, moduleName, singularClass, fields, packageName, useOrm);
         print('  \x1B[32m✓\x1B[0m pages/index.dart (with create modal)');
 
         // 4. Generate Detail Page (with Edit modal)
-        await _generateDetailPage(moduleDir, moduleName, singularClass, fields, packageName);
+        await _generateDetailPage(moduleDir, moduleName, singularClass, fields, packageName, useOrm);
         print('  \x1B[32m✓\x1B[0m pages/_id_.dart (with edit modal)');
 
         // 5. Generate Card Component
-        await _generateCard(moduleDir, singular, singularClass, fields, packageName);
+        await _generateCard(moduleDir, singular, singularClass, fields, packageName, useOrm);
         print('  \x1B[32m✓\x1B[0m components/${singular}_card.dart');
 
         // 6. Generate Form Component
-        await _generateForm(moduleDir, singular, singularClass, fields);
+        await _generateForm(moduleDir, singular, singularClass, fields, packageName);
         print('  \x1B[32m✓\x1B[0m components/${singular}_form.dart');
       }
 
       // 8. Try to add nav link
       await _addNavLink(projectDir, moduleName, className);
 
+      // 9. Auto-register model in server/db.dart and lib/main.server.dart
+      if (useOrm) {
+        await _addModelToDbDart(projectDir, singular, singularClass, packageName);
+        await _addModelToMainServer(projectDir, singular, singularClass, packageName);
+        if (generateApi) {
+          await _addApiRouteToServer(projectDir, moduleName, singularClass);
+        }
+      }
+
       print('');
       print('\x1B[32m✓ Scaffold complete!\x1B[0m');
       print('');
-      print('\x1B[32m✓ Scaffold complete!\x1B[0m');
-      print('');
-      print('Add routes to lib/app.dart:');
+      print('Routes will be auto-generated on next server restart.');
       print('');
       print('  // $className module');
       print('  Route(');
@@ -328,60 +336,172 @@ class ${className}Api {
     await File(p.join(moduleDir, 'api.dart')).writeAsString(content);
   }
 
-  Future<void> _generateListPage(String moduleDir, String moduleName, String className, List<FieldDef> fields, String packageName) async {
+  Future<void> _generateListPage(String moduleDir, String moduleName, String className, List<FieldDef> fields, String packageName, bool useOrm) async {
     final pluralClass = _toPascalCase(moduleName);
     final singular = _singularize(moduleName);
 
+    // Extract belongsTo relations
+    final belongsToFields = fields.where((f) => f.isBelongsTo).toList();
+
     // Build form data object from non-relation fields
     final formFields = fields.where((f) => !f.isRelation).toList();
-    final dataFields = formFields.map((f) => '            ${f.name}: form.${f.name}.value').join(',\n');
+    final dataFields = formFields.map((f) {
+      final fieldType = f.type.replaceAll('?', '').toLowerCase();
+      if (fieldType == 'bool') {
+        return '            ${f.name}: form.${f.name}.checked ? 1 : 0';
+      } else if (fieldType == 'int') {
+        return '            ${f.name}: parseInt(form.${f.name}.value) || 0';
+      }
+      return '            ${f.name}: form.${f.name}.value';
+    }).join(',\n');
 
-    final content = '''
+    // Get toMany fields
+    final toManyFields = fields.where((f) => f.isToMany).toList();
+
+    // Relation data fields for JavaScript form submission (belongsTo)
+    final belongsToDataFields = belongsToFields.map((f) {
+      return '            ${f.foreignKey}: parseInt(form.${f.foreignKey}.value) || null';
+    }).join(',\n');
+
+    // ToMany data fields for JavaScript form submission
+    final toManyDataFields = toManyFields.map((f) {
+      final singularName = _singularize(f.name);
+      return "            ${singularName}_ids: Array.from(form.querySelectorAll('input[name=\"${singularName}_ids[]\"]')).filter(c => c.checked).map(c => parseInt(c.value))";
+    }).join(',\n');
+
+    final relationDataFields = [belongsToDataFields, toManyDataFields].where((s) => s.isNotEmpty).join(',\n');
+
+    // Generate table headers and cells
+    final tableHeaders = formFields.map((f) =>
+      "                th(classes: 'px-4 py-3', [Component.text('${_toTitleCase(f.name)}')]),").join('\n');
+
+    final tableCells = formFields.map((f) {
+      final fieldType = f.type.replaceAll('?', '').toLowerCase();
+      if (fieldType == 'bool') {
+        return "                  td(classes: 'px-4 py-3', [Component.text(item.${f.name} == true || item.${f.name} == 1 ? '✓' : '–')]),";
+      } else if (fieldType == 'text' || f.name == 'content' || f.name == 'body' || f.name == 'description') {
+        return "                  td(classes: 'px-4 py-3 text-gray-300 max-w-xs truncate', [Component.text('\${(item.${f.name} ?? \"\").toString().length > 50 ? (item.${f.name}?.toString().substring(0, 50) ?? \"\") + \"...\" : item.${f.name} ?? \"-\"}')]),";
+      }
+      return "                  td(classes: 'px-4 py-3 text-gray-300', [Component.text('\${item.${f.name} ?? \"-\"}')]),";
+    }).join('\n');
+
+    // Build imports for related models (belongsTo + toMany)
+    final allRelationFields = [...belongsToFields, ...toManyFields];
+    final relationModelImports = allRelationFields.map((f) {
+      final relatedFile = _singularize(f.relatedModel!).toLowerCase();
+      return "import 'package:$packageName/models/$relatedFile.dart';";
+    }).toSet().join('\n');
+
+    // Different imports and data loading based on ORM usage
+    final imports = useOrm ? '''
 import 'package:jaspr/server.dart';
 import 'package:jaspr/dom.dart';
 import 'package:duxt_orm/duxt_orm.dart';
 import 'package:duxt_ui/duxt_ui.dart';
 import 'package:$packageName/models/$singular.dart';
-import '../components/${singular}_card.dart';
-import '../components/${singular}_form.dart';
+${relationModelImports.isNotEmpty ? relationModelImports : ''}
+import '../components/${singular}_form.dart';''' : '''
+import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
+import 'package:duxt_ui/duxt_ui.dart';
+import '../model.dart';
+import '../api.dart';
+import '../components/${singular}_form.dart';''';
 
-/// ${pluralClass} list page - SSR with AsyncStatelessComponent
-class ${pluralClass}ListPage extends AsyncStatelessComponent {
-  const ${pluralClass}ListPage({super.key});
+    final classDecl = useOrm
+        ? '/// ${pluralClass} list page - SSR with AsyncStatelessComponent\nclass ${pluralClass}ListPage extends AsyncStatelessComponent'
+        : '/// ${pluralClass} list page\nclass ${pluralClass}ListPage extends StatelessComponent';
 
-  @override
+    // Build relation data loaders for form dropdowns (belongsTo + toMany)
+    final belongsToLoaders = belongsToFields.map((f) {
+      final relatedClass = f.relatedModel!;
+      return "    final ${f.name}List = await Model<$relatedClass>().all();";
+    }).join('\n');
+    final toManyLoaders = toManyFields.map((f) {
+      final relatedClass = f.relatedModel!;
+      return "    final ${f.name}List = await Model<$relatedClass>().all();";
+    }).join('\n');
+    final relationLoaders = [belongsToLoaders, toManyLoaders].where((s) => s.isNotEmpty).join('\n');
+
+    // Build form constructor args for belongsTo relations
+    final belongsToFormArgs = belongsToFields.map((f) {
+      return "\n              ${f.name}List: ${f.name}List,";
+    }).join('');
+    // Build form constructor args for toMany relations
+    final toManyFormArgs = toManyFields.map((f) {
+      return "\n              ${f.name}List: ${f.name}List,";
+    }).join('');
+    final formRelationArgs = belongsToFormArgs + toManyFormArgs;
+
+    final buildMethod = useOrm
+        ? '''@override
   Future<Component> build(BuildContext context) async {
     // Load data from database (SSR)
     final items = await Model<$className>().all();
+${relationLoaders.isNotEmpty ? '\n    // Load related models for form dropdowns\n$relationLoaders' : ''}'''
+        : '''@override
+  Component build(BuildContext context) {
+    // TODO: Load data from API
+    final List<$className> items = [];''';
 
-    return div(classes: 'space-y-6', [
+    final content = '''
+$imports
+
+$classDecl {
+  const ${pluralClass}ListPage({super.key});
+
+  $buildMethod
+
+    return div(classes: 'max-w-5xl mx-auto py-6', [
       // Header
-      div(classes: 'flex justify-between items-center', [
-        h1(classes: 'text-3xl font-bold text-white', [
+      div(classes: 'flex justify-between items-center mb-6', [
+        h1(classes: 'text-2xl font-semibold text-white', [
           Component.text('$pluralClass'),
         ]),
         // Create Modal with DModal component
         DModal(
           trigger: span(
-            classes: 'px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700',
+            classes: 'px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 cursor-pointer',
             [Component.text('New $className')],
           ),
           title: 'New $className',
           size: DModalSize.lg,
           children: [
-            ${className}Form(),
+            ${className}Form($formRelationArgs
+            ),
           ],
         ),
       ]),
-      // List
+      // Table
       if (items.isEmpty)
-        div(classes: 'text-center py-12 text-gray-500', [
-          Component.text('No $moduleName yet'),
+        div(classes: 'text-center py-12 text-gray-500 bg-gray-800/30 rounded-lg', [
+          Component.text('No $moduleName yet. Create your first one!'),
         ])
       else
-        div(classes: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6', [
-          for (final item in items)
-            ${className}Card(item: item),
+        div(classes: 'overflow-x-auto rounded-lg border border-gray-700', [
+          table(classes: 'w-full text-sm text-left', [
+            thead(classes: 'text-xs uppercase bg-gray-800 text-gray-400', [
+              tr([
+                th(classes: 'px-4 py-3', [Component.text('ID')]),
+$tableHeaders
+                th(classes: 'px-4 py-3 text-right', [Component.text('Actions')]),
+              ]),
+            ]),
+            tbody(classes: 'divide-y divide-gray-700', [
+              for (final item in items)
+                tr(classes: 'bg-gray-800/30 hover:bg-gray-800/50', [
+                  td(classes: 'px-4 py-3 text-gray-400', [Component.text('\${item.id}')]),
+$tableCells
+                  td(classes: 'px-4 py-3 text-right', [
+                    a(
+                      href: '/$moduleName/\${item.id}',
+                      classes: 'text-cyan-400 hover:text-cyan-300 mr-3',
+                      [Component.text('View')],
+                    ),
+                  ]),
+                ]),
+            ]),
+          ]),
         ]),
 
       // Form submission script
@@ -390,7 +510,7 @@ class ${pluralClass}ListPage extends AsyncStatelessComponent {
           e.preventDefault();
           var form = document.getElementById('$singular-form');
           var data = {
-$dataFields
+$dataFields${relationDataFields.isNotEmpty ? ',\n$relationDataFields' : ''}
           };
           fetch('/api/$moduleName', {
             method: 'POST',
@@ -409,87 +529,257 @@ $dataFields
     await File(p.join(moduleDir, 'pages', 'index.dart')).writeAsString(content);
   }
 
-  Future<void> _generateDetailPage(String moduleDir, String moduleName, String className, List<FieldDef> fields, String packageName) async {
+  Future<void> _generateDetailPage(String moduleDir, String moduleName, String className, List<FieldDef> fields, String packageName, bool useOrm) async {
     final pluralClass = _toPascalCase(moduleName);
     final singular = _singularize(moduleName);
 
-    final fieldDisplays = fields.where((f) => !f.isRelation).map((f) => '''
-          div(classes: 'py-4 border-b border-gray-700', [
-            dt(classes: 'text-sm text-gray-400', [Component.text('${_toTitleCase(f.name)}')]),
-            dd(classes: 'mt-1 text-white', [Component.text('\${item.${f.name} ?? "-"}')]),
-          ]),''').join('\n');
+    // Non-relation field displays
+    final nonRelationDisplays = fields.where((f) => !f.isRelation).map((f) {
+      final fieldType = f.type.replaceAll('?', '').toLowerCase();
+      if (fieldType == 'bool') {
+        return '''            tr(classes: 'bg-gray-800/30', [
+              td(classes: 'px-4 py-3 text-gray-400 font-medium w-1/4', [Component.text('${_toTitleCase(f.name)}')]),
+              td(classes: 'px-4 py-3 text-white', [Component.text(item.${f.name} == true || item.${f.name} == 1 ? 'Yes' : 'No')]),
+            ]),''';
+      }
+      return '''            tr(classes: 'bg-gray-800/30', [
+              td(classes: 'px-4 py-3 text-gray-400 font-medium w-1/4', [Component.text('${_toTitleCase(f.name)}')]),
+              td(classes: 'px-4 py-3 text-white', [Component.text('\${item.${f.name} ?? "-"}')]),
+            ]),''';
+    }).toList();
+
+    // BelongsTo relation displays - show related model name
+    final belongsToDisplays = fields.where((f) => f.isBelongsTo).map((f) {
+      return '''            tr(classes: 'bg-gray-800/30', [
+              td(classes: 'px-4 py-3 text-gray-400 font-medium w-1/4', [Component.text('${_toTitleCase(f.name)}')]),
+              td(classes: 'px-4 py-3 text-white', [
+                item.${f.name} != null
+                  ? a(href: '/${f.name}/\${item.${f.foreignKey}}', classes: 'text-cyan-400 hover:text-cyan-300', [
+                      Component.text('\${item.${f.name}?.name ?? "#\${item.${f.foreignKey}}"}'),
+                    ])
+                  : Component.text('-'),
+              ]),
+            ]),''';
+    }).toList();
+
+    // ToMany relation displays - show list of related items
+    final toManyDisplays = fields.where((f) => f.isToMany).map((f) {
+      return '''            tr(classes: 'bg-gray-800/30', [
+              td(classes: 'px-4 py-3 text-gray-400 font-medium w-1/4 align-top', [Component.text('${_toTitleCase(f.name)}')]),
+              td(classes: 'px-4 py-3 text-white', [
+                item.${f.name}.isEmpty
+                  ? Component.text('-')
+                  : div(classes: 'flex flex-wrap gap-2', [
+                      for (final rel in item.${f.name})
+                        span(classes: 'px-2 py-1 bg-gray-700 rounded text-sm', [
+                          Component.text('\${rel.name ?? "#\${rel.id}"}'),
+                        ]),
+                    ]),
+              ]),
+            ]),''';
+    }).toList();
+
+    final fieldDisplays = [...nonRelationDisplays, ...belongsToDisplays, ...toManyDisplays].join('\n');
 
     // Build form data object from non-relation fields
     final formFields = fields.where((f) => !f.isRelation).toList();
-    final dataFields = formFields.map((f) => '            ${f.name}: form.${f.name}.value').join(',\n');
-    final valueSetters = formFields.map((f) => "          form.${f.name}.value = '\${_escapeJs(item.${f.name}?.toString() ?? '')}';").join('\n');
+    final dataFields = formFields.map((f) {
+      final fieldType = f.type.replaceAll('?', '').toLowerCase();
+      if (fieldType == 'bool') {
+        return '            ${f.name}: form.${f.name}.checked ? 1 : 0';
+      } else if (fieldType == 'int') {
+        return '            ${f.name}: parseInt(form.${f.name}.value) || 0';
+      }
+      return '            ${f.name}: form.${f.name}.value';
+    }).join(',\n');
+    final valueSetters = formFields.map((f) {
+      final fieldType = f.type.replaceAll('?', '').toLowerCase();
+      if (fieldType == 'bool') {
+        return "          form.${f.name}.checked = \${item.${f.name} == true || item.${f.name} == 1};";
+      }
+      return "          form.${f.name}.value = '\${_escapeJs(item.${f.name}?.toString() ?? '')}';";
+    }).join('\n');
 
-    final content = '''
+    // Build imports for related models (belongsTo + toMany)
+    final belongsToFields = fields.where((f) => f.isBelongsTo).toList();
+    final toManyFields = fields.where((f) => f.isToMany).toList();
+    final allRelationFields = [...belongsToFields, ...toManyFields];
+    final relationModelImports = allRelationFields.map((f) {
+      final relatedFile = _singularize(f.relatedModel!).toLowerCase();
+      return "import 'package:$packageName/models/$relatedFile.dart';";
+    }).toSet().join('\n');
+
+    // Different imports based on ORM usage
+    final imports = useOrm ? '''
 import 'package:jaspr/server.dart';
 import 'package:jaspr/dom.dart';
 import 'package:duxt_orm/duxt_orm.dart';
 import 'package:duxt_ui/duxt_ui.dart';
 import 'package:$packageName/models/$singular.dart';
-import '../components/${singular}_form.dart';
+$relationModelImports
+import '../components/${singular}_form.dart';''' : '''
+import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
+import 'package:duxt_ui/duxt_ui.dart';
+import '../model.dart';
+import '../api.dart';
+import '../components/${singular}_form.dart';''';
+
+    // Build relation names for eager loading
+    final relationFields = fields.where((f) => f.isRelation).toList();
+    final relationNames = relationFields.map((f) => "'${f.name}'").join(', ');
+    final withClause = relationFields.isNotEmpty ? ".include([$relationNames])" : "";
+
+    // Build relation data loaders for form dropdowns (belongsTo + toMany)
+    final belongsToLoaders = belongsToFields.map((f) {
+      final relatedClass = f.relatedModel!;
+      return "    final ${f.name}List = await Model<$relatedClass>().all();";
+    }).join('\n');
+    final toManyLoaders = toManyFields.map((f) {
+      final relatedClass = f.relatedModel!;
+      return "    final ${f.name}List = await Model<$relatedClass>().all();";
+    }).join('\n');
+    final relationLoaders = [belongsToLoaders, toManyLoaders].where((s) => s.isNotEmpty).join('\n');
+
+    // Build form constructor args for belongsTo relations
+    final belongsToFormArgs = belongsToFields.map((f) {
+      return "\n              ${f.name}List: ${f.name}List,\n              selected${_toPascalCase(f.name)}Id: item.${f.foreignKey},";
+    }).join('');
+
+    // Build form constructor args for toMany relations
+    final toManyFormArgs = toManyFields.map((f) {
+      return "\n              ${f.name}List: ${f.name}List,\n              selected${_toPascalCase(f.name)}Ids: item.${f.name}.map((e) => e.id! as int).toList(),";
+    }).join('');
+
+    final formRelationArgs = belongsToFormArgs + toManyFormArgs;
+
+    // Build relation field data for JavaScript form submission
+    final belongsToDataFields = belongsToFields.map((f) {
+      return '            ${f.foreignKey}: parseInt(form.${f.foreignKey}.value) || null';
+    }).join(',\n');
+
+    // ToMany fields: collect all checked checkbox values as array
+    final toManyDataFields = toManyFields.map((f) {
+      final singularName = _singularize(f.name);
+      return "            ${singularName}_ids: Array.from(form.querySelectorAll('input[name=\"${singularName}_ids[]\"]')).filter(c => c.checked).map(c => parseInt(c.value))";
+    }).join(',\n');
+
+    final relationDataFields = [belongsToDataFields, toManyDataFields].where((s) => s.isNotEmpty).join(',\n');
+
+    final classDecl = useOrm
+        ? '''/// ${className} detail page - SSR with AsyncStatelessComponent
+class ${pluralClass}DetailPage extends AsyncStatelessComponent'''
+        : '''/// ${className} detail page
+class ${pluralClass}DetailPage extends StatelessComponent''';
+
+    final buildStart = useOrm ? '''@override
+  Future<Component> build(BuildContext context) async {
+    final itemId = int.tryParse(id);
+    if (itemId == null) {
+      return div(classes: 'max-w-5xl mx-auto py-6', [
+        div(classes: 'text-red-400 py-12 text-center', [Component.text('Invalid ID')]),
+      ]);
+    }
+
+    final item = await Model<$className>()$withClause.find(itemId);
+    if (item == null) {
+      return div(classes: 'max-w-5xl mx-auto py-6', [
+        div(classes: 'text-red-400 py-12 text-center', [Component.text('$className not found')]),
+      ]);
+    }
+
+    // Load related models for form dropdowns
+$relationLoaders
+
+    return div(classes: 'max-w-5xl mx-auto py-6', [''' : '''@override
+  Component build(BuildContext context) {
+    // TODO: Load item from API using id
+    final $className? item = null;
+    if (item == null) {
+      return div(classes: 'max-w-5xl mx-auto py-6', [
+        div(classes: 'text-red-400 py-12 text-center', [Component.text('$className not found')]),
+      ]);
+    }
+
+    return div(classes: 'max-w-5xl mx-auto py-6', [''';
+
+    final content = '''
+$imports
 
 String _escapeJs(String s) => s.replaceAll("'", "\\\\'").replaceAll('\\n', '\\\\n');
 
-/// ${className} detail page - SSR with AsyncStatelessComponent
-class ${pluralClass}DetailPage extends AsyncStatelessComponent {
+$classDecl {
   final String id;
 
   const ${pluralClass}DetailPage({super.key, required this.id});
 
-  @override
-  Future<Component> build(BuildContext context) async {
-    final itemId = int.tryParse(id);
-    if (itemId == null) {
-      return div(classes: 'text-red-400 py-12', [Component.text('Invalid ID')]);
-    }
-
-    final item = await Model<$className>().find(itemId);
-    if (item == null) {
-      return div(classes: 'text-red-400 py-12', [Component.text('$className not found')]);
-    }
-
-    return div(classes: 'max-w-2xl mx-auto', [
+  $buildStart
       // Header
-      div(classes: 'flex justify-between items-center mb-8', [
-        h1(classes: 'text-3xl font-bold text-white', [
-          Component.text('$className Details'),
+      div(classes: 'flex justify-between items-center mb-6', [
+        div([
+          a(href: '/$moduleName', classes: 'text-gray-400 hover:text-white text-sm', [
+            Component.text('← Back to $pluralClass'),
+          ]),
+          h1(classes: 'text-2xl font-semibold text-white mt-1', [
+            Component.text('$className #\${item.id}'),
+          ]),
         ]),
         div(classes: 'flex gap-2', [
-          // Edit Modal with DModal component
+          // Edit Modal
           DModal(
             trigger: span(
-              classes: 'px-4 py-2 bg-cyan-600 rounded-lg hover:bg-cyan-700 text-white cursor-pointer',
+              classes: 'px-3 py-1.5 bg-gray-700 text-white text-sm rounded hover:bg-gray-600 cursor-pointer',
               [Component.text('Edit')],
             ),
             title: 'Edit $className',
             size: DModalSize.lg,
             children: [
-              ${className}Form(),
+              ${className}Form($formRelationArgs
+              ),
             ],
           ),
-          button(
-            id: 'delete-btn',
-            classes: 'px-4 py-2 bg-red-600 rounded-lg hover:bg-red-700 text-white',
-            [Component.text('Delete')],
-          ),
-          a(
-            href: '/$moduleName',
-            classes: 'px-4 py-2 border border-gray-600 rounded-lg hover:bg-gray-800 text-white',
-            [Component.text('Back')],
+          // Delete Modal
+          DModal(
+            trigger: span(
+              classes: 'px-3 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 cursor-pointer',
+              [Component.text('Delete')],
+            ),
+            title: 'Delete $className',
+            size: DModalSize.sm,
+            children: [
+              div(classes: 'text-center', [
+                p(classes: 'text-gray-300 mb-4', [
+                  Component.text('Are you sure you want to delete this $singular? This action cannot be undone.'),
+                ]),
+                div(classes: 'flex justify-center gap-3', [
+                  button(
+                    id: 'cancel-delete',
+                    classes: 'px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-500',
+                    attributes: {'data-modal-close': 'true'},
+                    [Component.text('Cancel')],
+                  ),
+                  button(
+                    id: 'confirm-delete',
+                    classes: 'px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700',
+                    [Component.text('Delete')],
+                  ),
+                ]),
+              ]),
+            ],
           ),
         ]),
       ]),
-      // Details
-      dl(classes: 'divide-y divide-gray-700', [
-        div(classes: 'py-4 border-b border-gray-700', [
-          dt(classes: 'text-sm text-gray-400', [Component.text('ID')]),
-          dd(classes: 'mt-1 text-white', [Component.text('\${item.id}')]),
-        ]),
+      // Details Table
+      div(classes: 'overflow-x-auto rounded-lg border border-gray-700', [
+        table(classes: 'w-full text-sm', [
+          tbody(classes: 'divide-y divide-gray-700', [
+            tr(classes: 'bg-gray-800/30', [
+              td(classes: 'px-4 py-3 text-gray-400 font-medium w-1/4', [Component.text('ID')]),
+              td(classes: 'px-4 py-3 text-white', [Component.text('\${item.id}')]),
+            ]),
 $fieldDisplays
+          ]),
+        ]),
       ]),
 
       // Scripts
@@ -503,14 +793,12 @@ $valueSetters
         })();
 
         // Delete handler
-        document.getElementById('delete-btn').addEventListener('click', function() {
-          if (confirm('Are you sure you want to delete this $singular?')) {
-            fetch('/api/$moduleName/\${item.id}', {
-              method: 'DELETE'
-            }).then(function() {
-              window.location.href = '/$moduleName';
-            }).catch(function(err) { alert('Error: ' + err); });
-          }
+        document.getElementById('confirm-delete').addEventListener('click', function() {
+          fetch('/api/$moduleName/\${item.id}', {
+            method: 'DELETE'
+          }).then(function() {
+            window.location.href = '/$moduleName';
+          }).catch(function(err) { alert('Error: ' + err); });
         });
 
         // Form submission (update)
@@ -518,7 +806,7 @@ $valueSetters
           e.preventDefault();
           var form = document.getElementById('$singular-form');
           var data = {
-$dataFields
+$dataFields${relationDataFields.isNotEmpty ? ',\n$relationDataFields' : ''}
           };
           fetch('/api/$moduleName/\${item.id}', {
             method: 'PUT',
@@ -537,15 +825,19 @@ $dataFields
     await File(p.join(moduleDir, 'pages', '_id_.dart')).writeAsString(content);
   }
 
-  Future<void> _generateCard(String moduleDir, String singular, String className, List<FieldDef> fields, String packageName) async {
+  Future<void> _generateCard(String moduleDir, String singular, String className, List<FieldDef> fields, String packageName, bool useOrm) async {
     final displayField = fields.where((f) => !f.isRelation).isNotEmpty
         ? fields.where((f) => !f.isRelation).first.name
         : 'id';
 
+    final modelImport = useOrm
+        ? "import 'package:$packageName/models/$singular.dart';"
+        : "import '../model.dart';";
+
     final content = '''
 import 'package:jaspr/jaspr.dart';
 import 'package:jaspr/dom.dart';
-import 'package:$packageName/models/$singular.dart';
+$modelImport
 
 class ${className}Card extends StatelessComponent {
   final $className item;
@@ -572,41 +864,149 @@ class ${className}Card extends StatelessComponent {
     await File(p.join(moduleDir, 'components', '${singular}_card.dart')).writeAsString(content);
   }
 
-  Future<void> _generateForm(String moduleDir, String singular, String className, List<FieldDef> fields) async {
-    // Only include non-relation fields in form
+  Future<void> _generateForm(String moduleDir, String singular, String className, List<FieldDef> fields, String packageName) async {
+    // Separate regular fields and relation fields
     final formFields = fields.where((f) => !f.isRelation).toList();
-    final inputFields = formFields.map((f) => '''
+    final belongsToFields = fields.where((f) => f.isBelongsTo).toList();
+    final toManyFields = fields.where((f) => f.isToMany).toList();
+
+    // Generate imports for related models (belongsTo + toMany)
+    final allRelationFields = [...belongsToFields, ...toManyFields];
+    final relationImports = allRelationFields.map((f) {
+      final relatedFile = _singularize(f.relatedModel!).toLowerCase();
+      return "import 'package:$packageName/models/$relatedFile.dart';";
+    }).toSet().join('\n');
+
+    // Generate constructor parameters for belongsTo relations
+    final belongsToParams = belongsToFields.map((f) {
+      return '    this.${f.name}List = const [],\n    this.selected${_toPascalCase(f.name)}Id,';
+    }).join('\n');
+
+    // Generate constructor parameters for toMany relations
+    final toManyParams = toManyFields.map((f) {
+      return '    this.${f.name}List = const [],\n    this.selected${_toPascalCase(f.name)}Ids = const [],';
+    }).join('\n');
+
+    final constructorParams = [belongsToParams, toManyParams].where((s) => s.isNotEmpty).join('\n');
+
+    // Generate class fields for belongsTo relations
+    final belongsToClassFields = belongsToFields.map((f) {
+      return '  final List<${f.relatedModel}> ${f.name}List;\n  final int? selected${_toPascalCase(f.name)}Id;';
+    }).join('\n');
+
+    // Generate class fields for toMany relations
+    final toManyClassFields = toManyFields.map((f) {
+      return '  final List<${f.relatedModel}> ${f.name}List;\n  final List<int> selected${_toPascalCase(f.name)}Ids;';
+    }).join('\n');
+
+    final classFields = [belongsToClassFields, toManyClassFields].where((s) => s.isNotEmpty).join('\n');
+
+    final inputFields = formFields.map((f) {
+      final fieldType = f.type.replaceAll('?', '').toLowerCase();
+
+      // Boolean fields use DSwitch
+      if (fieldType == 'bool') {
+        return '''
+        DSwitch(
+          name: '${f.name}',
+          label: '${_toTitleCase(f.name)}',
+        ),''';
+      }
+
+      // Text/content fields use textarea (styled)
+      if (fieldType == 'text' || f.name == 'content' || f.name == 'body' || f.name == 'description') {
+        return '''
         div(classes: 'space-y-1', [
-          label(classes: 'block text-sm font-medium text-gray-300', [
+          span(classes: 'block text-sm font-medium text-gray-700 dark:text-gray-200', [
             Component.text('${_toTitleCase(f.name)}'),
           ]),
-          input(
-            type: InputType.text,
-            name: '${f.name}',
-            classes: 'w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500',
+          Component.element(
+            tag: 'textarea',
+            attributes: {'name': '${f.name}', 'rows': '4'},
+            classes: 'w-full px-2.5 py-1.5 text-sm rounded-md border-0 bg-white dark:bg-zinc-900 text-gray-900 dark:text-white ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-cyan-500 focus:outline-none',
+            children: [],
           ),
-        ]),''').join('\n');
+        ]),''';
+      }
+
+      // Int fields use DInput with number type
+      if (fieldType == 'int') {
+        return '''
+        DInput(
+          name: '${f.name}',
+          label: '${_toTitleCase(f.name)}',
+          type: InputType.number,
+        ),''';
+      }
+
+      // Default: DInput text
+      return '''
+        DInput(
+          name: '${f.name}',
+          label: '${_toTitleCase(f.name)}',
+        ),''';
+    }).join('\n');
+
+    // Generate DSelect for belongsTo relations
+    final belongsToFormFields = belongsToFields.map((f) {
+      return '''
+        DSelect<int>(
+          name: '${f.foreignKey}',
+          label: '${_toTitleCase(f.name)}',
+          placeholder: '-- Select ${_toTitleCase(f.name)} --',
+          value: selected${_toPascalCase(f.name)}Id,
+          options: [
+            for (final item in ${f.name}List)
+              DSelectOption(value: item.id!, label: item.name ?? '${f.relatedModel} #\${item.id}'),
+          ],
+        ),''';
+    }).join('\n');
+
+    // Generate DCheckboxGroup for toMany relations
+    final toManyFormFields = toManyFields.map((f) {
+      final singularName = _singularize(f.name);
+      return '''
+        DCheckboxGroup<int>(
+          name: '${singularName}_ids',
+          label: '${_toTitleCase(f.name)}',
+          options: [
+            for (final item in ${f.name}List)
+              DCheckboxOption(value: item.id!, label: item.name ?? '${f.relatedModel} #\${item.id}'),
+          ],
+          value: selected${_toPascalCase(f.name)}Ids,
+        ),''';
+    }).join('\n');
+
+    final relationFields = [belongsToFormFields, toManyFormFields].where((s) => s.isNotEmpty).join('\n');
 
     final content = '''
 import 'package:jaspr/jaspr.dart';
 import 'package:jaspr/dom.dart';
+import 'package:duxt_ui/duxt_ui.dart';
+${relationImports.isNotEmpty ? relationImports : ''}
 
 class ${className}Form extends StatelessComponent {
-  const ${className}Form({super.key});
+${classFields.isNotEmpty ? classFields : ''}
+
+  const ${className}Form({
+    super.key,
+${constructorParams.isNotEmpty ? constructorParams : ''}
+  });
 
   @override
   Component build(BuildContext context) {
     return form(
       id: '${singular}-form',
-      classes: 'space-y-6',
+      classes: 'space-y-4',
       attributes: {'onsubmit': 'return submit${className}Form(event)'},
       [
 $inputFields
+$relationFields
         // Submit
-        div(classes: 'flex justify-end', [
+        DFormActions(children: [
           button(
             type: ButtonType.submit,
-            classes: 'px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700',
+            classes: 'px-4 py-2 bg-cyan-500 text-white rounded-md hover:bg-cyan-600 font-medium text-sm',
             [Component.text('Save')],
           ),
         ]),
@@ -706,27 +1106,38 @@ $inputFields
     // Build relation accessors
     final relationAccessors = <String>[];
     for (final f in belongsToFields) {
-      relationAccessors.add("  /// Get the related ${f.relatedModel} (use .with_(['${f.name}']) to load)");
+      relationAccessors.add("  /// Get the related ${f.relatedModel} (use .include(['${f.name}']) to load)");
       relationAccessors.add("  ${f.relatedModel}? get ${f.name} => getRelation<${f.relatedModel}>('${f.name}');");
     }
     for (final f in toManyFields) {
-      relationAccessors.add("  /// Get related ${f.relatedModel} list (use .with_(['${f.name}']) to load)");
-      relationAccessors.add("  List<${f.relatedModel}> get ${f.name} => getRelation<List<${f.relatedModel}>>('${f.name}') ?? [];");
+      relationAccessors.add("  /// Get related ${f.relatedModel} list (use .include(['${f.name}']) to load)");
+      relationAccessors.add("""  List<${f.relatedModel}> get ${f.name} {
+    final rel = relationLoaded('${f.name}') ? getRelation<dynamic>('${f.name}') : null;
+    if (rel == null) return [];
+    if (rel is List) return rel.cast<${f.relatedModel}>();
+    return [];
+  }""");
     }
     final relationAccessorsCode = relationAccessors.join('\n');
 
     // Build relation registrations
     final relationRegs = <String>[];
     for (final f in belongsToFields) {
+      final relatedTable = _pluralize(_singularize(f.relatedModel!).toLowerCase());
       relationRegs.add('''
     Entity.registerRelation<$className>(
       '${f.name}',
-      BelongsTo<${f.relatedModel}>(foreignKey: '${f.foreignKey}'),
+      BelongsTo<${f.relatedModel}>(
+        foreignKey: '${f.foreignKey}',
+        tableName: '$relatedTable',
+        fromRow: ${f.relatedModel}.fromRow,
+      ),
     );''');
     }
     for (final f in toManyFields) {
       final pivotTable = '${singular}_${_singularize(f.name).toLowerCase()}s';
       final relatedSingular = _singularize(f.relatedModel!).toLowerCase();
+      final relatedTable = _pluralize(relatedSingular);
       relationRegs.add('''
     Entity.registerRelation<$className>(
       '${f.name}',
@@ -734,11 +1145,13 @@ $inputFields
         pivotTable: '$pivotTable',
         foreignPivotKey: '${singular}_id',
         relatedPivotKey: '${relatedSingular}_id',
+        tableName: '$relatedTable',
+        fromRow: ${f.relatedModel}.fromRow,
       ),
     );
     Entity.registerPivotTable('$pivotTable', schema: {
       '${singular}_id': Column.integer().notNull().references('$moduleName'),
-      '${relatedSingular}_id': Column.integer().notNull().references('${_pluralize(relatedSingular)}'),
+      '${relatedSingular}_id': Column.integer().notNull().references('$relatedTable'),
     }, primaryKey: ['${singular}_id', '${relatedSingular}_id']);''');
     }
     final relationRegistrations = relationRegs.join('\n');
@@ -834,9 +1247,20 @@ $relationRegistrations
   Future<void> _generateOrmRoutes(String routesDir, String className, String moduleName, String singular, List<FieldDef> fields, String packageName) async {
     // Filter for regular fields only (not relations)
     final regularFields = fields.where((f) => !f.isRelation).toList();
+    final belongsToFields = fields.where((f) => f.isBelongsTo).toList();
 
     // Helper to make nullable type (avoid String??)
     String makeNullable(String type) => type.endsWith('?') ? type : '$type?';
+
+    // Build update lines for regular fields
+    final regularUpdateLines = regularFields.map((f) =>
+      "      if (body.containsKey('${f.name}')) item.${f.name} = body['${f.name}'] as ${makeNullable(f.type)};").join('\n');
+
+    // Build update lines for foreign key fields
+    final foreignKeyUpdateLines = belongsToFields.map((f) =>
+      "      if (body.containsKey('${f.foreignKey}')) item.${f.foreignKey} = body['${f.foreignKey}'] as int?;").join('\n');
+
+    final allUpdateLines = [regularUpdateLines, foreignKeyUpdateLines].where((s) => s.isNotEmpty).join('\n');
 
     final content = '''
 import 'package:duxt/server.dart';
@@ -895,7 +1319,7 @@ void register${className}Routes(DuxtServer server) {
 
     final body = req.body as Map<String, dynamic>?;
     if (body != null) {
-${regularFields.map((f) => "      if (body.containsKey('${f.name}')) item.${f.name} = body['${f.name}'] as ${makeNullable(f.type)};").join('\n')}
+$allUpdateLines
     }
 
     await item.save();
@@ -1012,16 +1436,16 @@ ${regularFields.map((f) => "      if (body.containsKey('${f.name}')) item.${f.na
         }
 
         // Try to find nav section and add link
-        // Look for the last Link in a nav section and add after it
-        final linkPattern = RegExp(
-          r"(Link\(to: '/[^']+', child: span\(classes: '[^']+', \[Component\.text\('[^']+'\)\]\)\)),?\n(\s*)(\]\),)",
-          multiLine: true,
+        // Look for nav(... [ and insert before the closing ]),
+        final navPattern = RegExp(
+          r"(nav\(classes: '[^']+', \[[\s\S]*?)((\n)(\s+)(\]\),))",
         );
 
-        if (linkPattern.hasMatch(content)) {
-          content = content.replaceFirstMapped(linkPattern, (m) {
-            final indent = m.group(2) ?? '              ';
-            return "${m.group(1)},\n${indent}Link(to: '/$moduleName', child: span(classes: 'text-sm text-gray-300 hover:text-white transition-colors', [Component.text('$className')])),\n${m.group(2)}${m.group(3)}";
+        if (navPattern.hasMatch(content)) {
+          content = content.replaceFirstMapped(navPattern, (m) {
+            final indent = m.group(4) ?? '              ';
+            final newLink = "\n${indent}Link(to: '/$moduleName', child: span(classes: 'text-sm text-gray-300 hover:text-white transition-colors', [Component.text('$className')])),";
+            return "${m.group(1)}$newLink${m.group(2)}";
           });
           await file.writeAsString(content);
           print('  \x1B[32m✓\x1B[0m Added nav link to ${p.basename(layoutPath)}');
@@ -1046,6 +1470,123 @@ ${regularFields.map((f) => "      if (body.containsKey('${f.name}')) item.${f.na
       }
     }
     // If we couldn't add automatically, don't print error - user can add manually
+  }
+
+  /// Add model registration to server/db.dart
+  Future<void> _addModelToDbDart(String projectDir, String singular, String className, String packageName) async {
+    final dbPath = p.join(projectDir, 'server', 'db.dart');
+    final file = File(dbPath);
+    if (!file.existsSync()) return;
+
+    var content = await file.readAsString();
+
+    // Check if already registered
+    if (content.contains('$className.register()')) return;
+
+    // Add import
+    final importLine = "import 'package:$packageName/models/$singular.dart';";
+    if (!content.contains(importLine)) {
+      // Find last import and add after it
+      final importPattern = RegExp(r"(import '[^']+';)\n(?!import)");
+      if (importPattern.hasMatch(content)) {
+        content = content.replaceFirstMapped(importPattern, (m) {
+          return "${m.group(1)}\n$importLine\n";
+        });
+      }
+    }
+
+    // Add registration call
+    final registerPattern = RegExp(r'(\w+\.register\(\);)\n(?!\s*\w+\.register)');
+    if (registerPattern.hasMatch(content)) {
+      content = content.replaceFirstMapped(registerPattern, (m) {
+        return "${m.group(1)}\n    $className.register();";
+      });
+      await file.writeAsString(content);
+      print('  \x1B[32m✓\x1B[0m Added $className.register() to server/db.dart');
+    }
+  }
+
+  /// Add model registration to lib/main.server.dart
+  Future<void> _addModelToMainServer(String projectDir, String singular, String className, String packageName) async {
+    final mainServerPath = p.join(projectDir, 'lib', 'main.server.dart');
+    final file = File(mainServerPath);
+    if (!file.existsSync()) return;
+
+    var content = await file.readAsString();
+
+    // Check if already registered
+    if (content.contains('$className.register()')) return;
+
+    // Add import
+    final importLine = "import 'models/$singular.dart';";
+    if (!content.contains(importLine)) {
+      // Find last models import and add after it
+      final importPattern = RegExp(r"(import 'models/[^']+';)\n(?!import 'models/)");
+      if (importPattern.hasMatch(content)) {
+        content = content.replaceFirstMapped(importPattern, (m) {
+          return "${m.group(1)}\n$importLine\n";
+        });
+      } else {
+        // Try generic import pattern
+        final genericPattern = RegExp(r"(import '[^']+';)\n(?!import)");
+        if (genericPattern.hasMatch(content)) {
+          content = content.replaceFirstMapped(genericPattern, (m) {
+            return "${m.group(1)}\n$importLine\n";
+          });
+        }
+      }
+    }
+
+    // Add registration call
+    final registerPattern = RegExp(r'(\w+\.register\(\);)\n(?!\s*\w+\.register)');
+    if (registerPattern.hasMatch(content)) {
+      content = content.replaceFirstMapped(registerPattern, (m) {
+        return "${m.group(1)}\n  $className.register();";
+      });
+      await file.writeAsString(content);
+      print('  \x1B[32m✓\x1B[0m Added $className.register() to lib/main.server.dart');
+    }
+  }
+
+  /// Add API route registration to server/main.dart
+  Future<void> _addApiRouteToServer(String projectDir, String moduleName, String className) async {
+    final mainPath = p.join(projectDir, 'server', 'main.dart');
+    final file = File(mainPath);
+    if (!file.existsSync()) return;
+
+    var content = await file.readAsString();
+
+    // Check if already registered
+    if (content.contains("register${className}Routes(")) return;
+
+    // Add import
+    final importLine = "import 'api/$moduleName.dart';";
+    if (!content.contains(importLine)) {
+      final importPattern = RegExp(r"(import 'api/[^']+';)\n(?!import 'api/)");
+      if (importPattern.hasMatch(content)) {
+        content = content.replaceFirstMapped(importPattern, (m) {
+          return "${m.group(1)}\n$importLine\n";
+        });
+      } else {
+        // Try after db.dart import
+        final dbPattern = RegExp(r"(import 'db\.dart';)\n");
+        if (dbPattern.hasMatch(content)) {
+          content = content.replaceFirstMapped(dbPattern, (m) {
+            return "${m.group(1)}$importLine\n";
+          });
+        }
+      }
+    }
+
+    // Add route registration call
+    final routePattern = RegExp(r'(register\w+Routes\(server\);)\n(?!\s*register\w+Routes)');
+    if (routePattern.hasMatch(content)) {
+      content = content.replaceFirstMapped(routePattern, (m) {
+        return "${m.group(1)}\n  register${className}Routes(server);";
+      });
+      await file.writeAsString(content);
+      print('  \x1B[32m✓\x1B[0m Added register${className}Routes() to server/main.dart');
+    }
   }
 }
 
