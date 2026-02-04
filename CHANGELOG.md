@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.5] - 2026-02-04
+
+### Added
+- **DuxtUI form components in scaffold** - Generated forms now use `DInput`, `DSwitch`, `DSelect`, `DCheckboxGroup`
+- **Relation dropdowns** - BelongsTo relations generate `DSelect` dropdowns with related model options
+- **Many-to-many support** - ToMany relations generate `DCheckboxGroup` for multi-select
+- **Relation syntax** - Parse `field:belongsTo:Model` and `field:toMany:Model` in scaffold command
+- **Pivot table generation** - Automatically generate pivot tables for many-to-many relations
+- **SSR relation loading** - List and detail pages load related models for form dropdowns
+
+### Changed
+- Forms include foreign key fields in JavaScript submission
+- Detail pages pass selected relation IDs to edit form
+- API routes handle foreign key updates
+
 ## [0.4.4] - 2026-02-03
 
 ### Changed
