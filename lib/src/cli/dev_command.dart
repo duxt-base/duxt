@@ -163,6 +163,16 @@ class DevCommand extends Command<int> {
     // Start jaspr serve on internal port
     print('\x1B[90m→\x1B[0m Starting Jaspr server on port $jasprPort...');
 
+    // Check if this is a fresh build (no .dart_tool/build exists)
+    final buildDir = Directory(p.join(projectDir, '.dart_tool', 'build'));
+    final isFirstBuild = !buildDir.existsSync();
+    if (isFirstBuild) {
+      print('  \x1B[33mFirst build - this may take 1-2 minutes...\x1B[0m');
+      if (!verbose) {
+        print('  \x1B[90mRun with --verbose to see build progress\x1B[0m');
+      }
+    }
+
     // Check for local jaspr first (for development), then fall back to global
     final home = Platform.environment['HOME'] ?? '';
     final localJasprBin = p.join(p.dirname(projectDir), 'jaspr', 'packages', 'jaspr_cli', 'bin', 'jaspr.dart');
@@ -248,9 +258,19 @@ class DevCommand extends Command<int> {
 
     // Wait for Jaspr to actually be ready (with timeout fallback)
     await jasprReady.future.timeout(
-      const Duration(seconds: 120),
-      onTimeout: () => print('\x1B[33m!\x1B[0m Jaspr taking longer than expected...'),
+      const Duration(seconds: 180),
+      onTimeout: () {
+        print('\x1B[33m!\x1B[0m Build taking longer than expected...');
+        print('  \x1B[90mFirst builds can take 2-3 minutes. Run with --verbose for details.\x1B[0m');
+      },
     );
+
+    // Stop spinner and broadcast ready state
+    if (isBuilding) {
+      buildSpinner.stop();
+      isBuilding = false;
+    }
+    devTools.broadcast('success', 'Ready!', details: 'Development server started');
 
     // Start proxy server on main port
     final handler = const shelf.Pipeline()
@@ -767,6 +787,7 @@ class _DevTools {
   final int port;
   final List<WebSocketChannel> _clients = [];
   HttpServer? _server;
+  String? _lastState; // Track last state to send to new clients
 
   _DevTools(this.port);
 
@@ -780,6 +801,14 @@ class _DevTools {
         'type': 'connected',
         'message': 'Duxt DevTools connected',
       }));
+
+      // Send current state to new client (fixes race condition where
+      // client connects after build completed)
+      if (_lastState != null) {
+        try {
+          webSocket.sink.add(_lastState!);
+        } catch (_) {}
+      }
 
       webSocket.stream.listen(
         (_) {},
@@ -799,6 +828,11 @@ class _DevTools {
       if (details != null) 'details': details,
       'timestamp': DateTime.now().millisecondsSinceEpoch,
     });
+
+    // Store state for new clients (only track success/building states)
+    if (type == 'success' || type == 'building') {
+      _lastState = payload;
+    }
 
     for (final client in _clients.toList()) {
       try {

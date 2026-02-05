@@ -36,7 +36,10 @@ class MinimalTemplate {
     // App files
     await _write(dir, 'lib/app.dart', _minimalAppTemplate);
     await _write(dir, 'lib/main.client.dart', mainClientTemplate);
-    if (mode == 'static' || mode == 'server') {
+    if (mode == 'server') {
+      // Server mode includes ORM initialization
+      await _write(dir, 'lib/main.server.dart', serverModeMainServerTemplate(projectName));
+    } else if (mode == 'static') {
       await _write(dir, 'lib/main.server.dart', mainServerTemplate(projectName));
     }
 
@@ -74,8 +77,14 @@ class MinimalTemplate {
   }
 }
 
-/// Minimal pubspec without server dependencies
-String _minimalPubspec(String projectName, {String mode = 'static'}) => '''
+/// Minimal pubspec - includes duxt_orm for server mode
+String _minimalPubspec(String projectName, {String mode = 'static'}) {
+  final serverDeps = mode == 'server' ? '''
+  duxt_orm:
+  sqlite3:
+''' : '';
+
+  return '''
 name: $projectName
 description: A Duxt project
 version: 0.1.0
@@ -89,7 +98,7 @@ dependencies:
   jaspr_router:
   duxt:
   duxt_ui:
-
+$serverDeps
 dev_dependencies:
   build_runner:
   build_web_compilers:
@@ -99,6 +108,7 @@ dev_dependencies:
 jaspr:
   mode: $mode
 ''';
+}
 
 /// Minimal app without content routing
 const _minimalAppTemplate = r'''

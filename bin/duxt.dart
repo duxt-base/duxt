@@ -18,7 +18,8 @@ import 'package:duxt/src/cli/update_command.dart';
 import 'package:duxt/src/cli/version_command.dart';
 import 'package:duxt/src/cli/docs_command.dart';
 
-const version = '0.4.5';
+const version = '0.4.14';
+const minJasprVersion = '0.22.2';
 
 void main(List<String> args) async {
   // Handle version flag
@@ -30,6 +31,13 @@ void main(List<String> args) async {
   // Check for updates in background (non-blocking)
   if (args.isNotEmpty && !args.contains('update')) {
     checkForUpdates(version);
+  }
+
+  // Check jaspr version for commands that need it
+  final jasprCommands = ['dev', 'build', 'preview', 'start', 'generate', 'clean'];
+  final command = args.isNotEmpty ? args.first : '';
+  if (jasprCommands.contains(command)) {
+    await checkJasprVersion();
   }
 
   final runner = CommandRunner<int>(
@@ -95,4 +103,65 @@ Run "duxt help <command>" for more information.
     print('Error: $e');
     exit(1);
   }
+}
+
+/// Check if jaspr CLI is installed and meets minimum version requirement
+Future<void> checkJasprVersion() async {
+  try {
+    final result = await Process.run('jaspr', ['--version']);
+    if (result.exitCode != 0) {
+      print('\x1B[31m✗\x1B[0m Jaspr CLI not found.');
+      print('  Install it with: dart pub global activate jaspr');
+      exit(1);
+    }
+
+    // Parse version from output - jaspr prints version on its own line
+    // The output may include package resolution, so look for a line that's just a version
+    final output = result.stdout.toString();
+    final lines = output.split('\n');
+    String? installedVersion;
+
+    // Find a line that contains only a version number (e.g., "0.22.2")
+    for (final line in lines) {
+      final trimmed = line.trim();
+      if (RegExp(r'^0\.\d+\.\d+$').hasMatch(trimmed)) {
+        installedVersion = trimmed;
+        break;
+      }
+    }
+
+    if (installedVersion == null) {
+      print('\x1B[33m!\x1B[0m Could not determine Jaspr version');
+      return;
+    }
+
+    if (!_isVersionSatisfied(installedVersion, minJasprVersion)) {
+      print('');
+      print('\x1B[31m✗\x1B[0m Jaspr version $installedVersion is not supported.');
+      print('  Please update to the latest version.');
+      print('');
+      print('  Run: jaspr update');
+      print('');
+      exit(1);
+    }
+  } catch (e) {
+    print('\x1B[31m✗\x1B[0m Jaspr CLI not found.');
+    print('  Install it with: dart pub global activate jaspr');
+    exit(1);
+  }
+}
+
+/// Compare semantic versions. Returns true if installed >= required.
+bool _isVersionSatisfied(String installed, String required) {
+  final installedParts = installed.split('.').map(int.parse).toList();
+  final requiredParts = required.split('.').map(int.parse).toList();
+
+  for (var i = 0; i < 3; i++) {
+    final inst = i < installedParts.length ? installedParts[i] : 0;
+    final req = i < requiredParts.length ? requiredParts[i] : 0;
+
+    if (inst > req) return true;
+    if (inst < req) return false;
+  }
+  return true; // Equal versions
 }

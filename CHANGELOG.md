@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.15] - 2026-02-05
+
+### Added
+- **Jaspr version check** - CLI now requires Jaspr 0.22.2 or higher and shows helpful update message
+- **displayLabel getter** - Scaffold-generated models include `displayLabel` for dropdown display
+
+### Fixed
+- **Build always rebuilds** - `duxt build` now always rebuilds frontend instead of skipping if output exists
+- **Scaffold boolean handling** - API routes properly handle bool/int/string conversion for checkboxes
+- **Scaffold plural routes** - Routes now use correct plural form (e.g., `/categories` not `/categorys`)
+
+## [0.4.10] - 2026-02-05
+
+### Fixed
+- **Scaffold creates API server** - When using `--orm`, scaffold now auto-creates `server/main.dart` and `server/db.dart` if missing
+- **API routes properly registered** - First scaffold properly registers routes in server/main.dart
+
+## [0.4.9] - 2026-02-05
+
+### Fixed
+- **Auto-migration on server start** - Server mode now runs `DuxtOrm.migrate()` automatically to create tables
+- **Version display** - Fixed `duxt version` showing stale version
+
+## [0.4.8] - 2026-02-05
+
+### Fixed
+- **Server mode now includes ORM initialization** - Projects created with `--mode=server` now have `DuxtOrm.init()` in `main.server.dart`
+- **Scaffold properly registers models** - Model registration is added to `main.server.dart` for SSR data fetching
+
+## [0.4.7] - 2026-02-05
+
+### Fixed
+- **Browser stuck on "Building..." after build completes** - Fixed race condition where browser connects to WebSocket after build finished. Now sends current state to new clients immediately on connect.
+- **Templates missing duxt_orm for server mode** - Minimal and marketing templates now include `duxt_orm` and `sqlite3` when created with `--mode=server`
+- **Scaffold auto-adds duxt_orm** - When using `duxt scaffold --orm`, the dependency is automatically added to pubspec.yaml if missing
+
+## [0.4.6] - 2026-02-05
+
+### Fixed
+- **Dev server "Building..." stuck** - Browser overlay now correctly shows "Ready!" when first build completes
+- Added first-build message explaining 1-2 minute wait time
+- Increased build timeout from 120s to 180s for slower machines
+- Added suggestion to run with `--verbose` for build progress details
+
 ## [0.4.5] - 2026-02-04
 
 ### Added

@@ -71,6 +71,50 @@ void main() {
 }
 ''';
 
+/// main.server.dart template with ORM initialization (for server mode)
+/// Models are added by scaffold command
+String serverModeMainServerTemplate(String projectName) => '''
+import 'dart:io';
+import 'package:jaspr/dom.dart';
+import 'package:jaspr/server.dart';
+import 'package:duxt/duxt.dart';
+import 'package:duxt_orm/duxt_orm.dart';
+import 'app.dart';
+
+import 'main.server.options.dart';
+
+void main() async {
+  // Register models here (added by scaffold command)
+
+  // Initialize ORM for SSR data fetching
+  final dataDir = Platform.environment['DATA_DIR'] ?? '.';
+  await DuxtOrm.init((
+    driver: 'sqlite',
+    host: '',
+    port: 0,
+    database: '',
+    username: '',
+    password: '',
+    path: '\$dataDir/app.db',
+    ssl: false,
+  ));
+
+  // Auto-migrate database tables
+  await DuxtOrm.migrate();
+
+  Api.configure(baseUrl: '/api');
+  Jaspr.initializeApp(options: defaultServerOptions);
+
+  runApp(Document(
+    title: '$projectName',
+    head: [
+      link(href: '/styles.css', rel: 'stylesheet'),
+    ],
+    body: App(),
+  ));
+}
+''';
+
 /// main.server.dart template for blog (with ORM initialization for SSR)
 String blogMainServerTemplate(String projectName) => '''
 import 'dart:io';
@@ -100,6 +144,9 @@ void main() async {
     path: '\$dataDir/app.db',
     ssl: false,
   ));
+
+  // Auto-migrate database tables
+  await DuxtOrm.migrate();
 
   Api.configure(baseUrl: '/api');
   Jaspr.initializeApp(options: defaultServerOptions);

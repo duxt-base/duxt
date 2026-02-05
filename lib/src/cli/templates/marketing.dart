@@ -37,7 +37,10 @@ class MarketingTemplate {
     // App files
     await _write(dir, 'lib/app.dart', _marketingAppTemplate);
     await _write(dir, 'lib/main.client.dart', mainClientTemplate);
-    if (mode == 'static' || mode == 'server') {
+    if (mode == 'server') {
+      // Server mode includes ORM initialization
+      await _write(dir, 'lib/main.server.dart', serverModeMainServerTemplate(projectName));
+    } else if (mode == 'static') {
       await _write(dir, 'lib/main.server.dart', mainServerTemplate(projectName));
     }
 
@@ -90,8 +93,14 @@ class MarketingTemplate {
   }
 }
 
-/// Marketing pubspec - no server dependencies
-String _marketingPubspec(String projectName, {String mode = 'static'}) => '''
+/// Marketing pubspec - includes duxt_orm for server mode
+String _marketingPubspec(String projectName, {String mode = 'static'}) {
+  final serverDeps = mode == 'server' ? '''
+  duxt_orm:
+  sqlite3:
+''' : '';
+
+  return '''
 name: $projectName
 description: A Duxt marketing site
 version: 0.1.0
@@ -105,7 +114,7 @@ dependencies:
   jaspr_router:
   duxt:
   duxt_ui:
-
+$serverDeps
 dev_dependencies:
   build_runner:
   build_web_compilers:
@@ -115,6 +124,7 @@ dev_dependencies:
 jaspr:
   mode: $mode
 ''';
+}
 
 const _marketingAppTemplate = r'''
 import 'package:jaspr/jaspr.dart';

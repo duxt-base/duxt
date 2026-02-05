@@ -73,6 +73,14 @@ class ScaffoldCommand extends Command<int> {
     print('\x1B[36mScaffolding $moduleName module...\x1B[0m');
     print('');
 
+    // Auto-add duxt_orm and sqlite3 dependencies if using ORM
+    if (useOrm) {
+      await _ensureDependency(projectDir, 'duxt_orm');
+      await _ensureDependency(projectDir, 'sqlite3');
+      // Ensure server/main.dart exists for API routes
+      await _ensureServerMain(projectDir, packageName);
+    }
+
     final className = _toPascalCase(moduleName);
     final singular = _singularize(moduleName);
     final singularClass = _toPascalCase(singular);
@@ -550,12 +558,13 @@ $dataFields${relationDataFields.isNotEmpty ? ',\n$relationDataFields' : ''}
 
     // BelongsTo relation displays - show related model name
     final belongsToDisplays = fields.where((f) => f.isBelongsTo).map((f) {
+      final relatedRoute = _pluralize(_singularize(f.relatedModel!).toLowerCase());
       return '''            tr(classes: 'bg-gray-800/30', [
               td(classes: 'px-4 py-3 text-gray-400 font-medium w-1/4', [Component.text('${_toTitleCase(f.name)}')]),
               td(classes: 'px-4 py-3 text-white', [
                 item.${f.name} != null
-                  ? a(href: '/${f.name}/\${item.${f.foreignKey}}', classes: 'text-cyan-400 hover:text-cyan-300', [
-                      Component.text('\${item.${f.name}?.name ?? "#\${item.${f.foreignKey}}"}'),
+                  ? a(href: '/$relatedRoute/\${item.${f.foreignKey}}', classes: 'text-cyan-400 hover:text-cyan-300', [
+                      Component.text('\${item.${f.name}?.displayLabel ?? "${f.relatedModel} #\${item.${f.foreignKey}}"}'),
                     ])
                   : Component.text('-'),
               ]),
@@ -572,7 +581,7 @@ $dataFields${relationDataFields.isNotEmpty ? ',\n$relationDataFields' : ''}
                   : div(classes: 'flex flex-wrap gap-2', [
                       for (final rel in item.${f.name})
                         span(classes: 'px-2 py-1 bg-gray-700 rounded text-sm', [
-                          Component.text('\${rel.name ?? "#\${rel.id}"}'),
+                          Component.text('\${rel.displayLabel}'),
                         ]),
                     ]),
               ]),
@@ -904,13 +913,22 @@ class ${className}Card extends StatelessComponent {
     final inputFields = formFields.map((f) {
       final fieldType = f.type.replaceAll('?', '').toLowerCase();
 
-      // Boolean fields use DSwitch
+      // Boolean fields use native checkbox (works with form submission)
       if (fieldType == 'bool') {
         return '''
-        DSwitch(
-          name: '${f.name}',
-          label: '${_toTitleCase(f.name)}',
-        ),''';
+        div(classes: 'flex items-center gap-3', [
+          input(
+            type: InputType.checkbox,
+            name: '${f.name}',
+            id: '${f.name}',
+            classes: 'h-5 w-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500 dark:border-gray-600 dark:bg-zinc-800',
+          ),
+          label(
+            htmlFor: '${f.name}',
+            classes: 'text-sm font-medium text-gray-700 dark:text-gray-200 cursor-pointer',
+            [Component.text('${_toTitleCase(f.name)}')],
+          ),
+        ]),''';
       }
 
       // Text/content fields use textarea (styled)
@@ -957,7 +975,7 @@ class ${className}Card extends StatelessComponent {
           value: selected${_toPascalCase(f.name)}Id,
           options: [
             for (final item in ${f.name}List)
-              DSelectOption(value: item.id!, label: item.name ?? '${f.relatedModel} #\${item.id}'),
+              DSelectOption(value: item.id!, label: item.displayLabel),
           ],
         ),''';
     }).join('\n');
@@ -971,7 +989,7 @@ class ${className}Card extends StatelessComponent {
           label: '${_toTitleCase(f.name)}',
           options: [
             for (final item in ${f.name}List)
-              DCheckboxOption(value: item.id!, label: item.name ?? '${f.relatedModel} #\${item.id}'),
+              DCheckboxOption(value: item.id!, label: item.displayLabel),
           ],
           value: selected${_toPascalCase(f.name)}Ids,
         ),''';
@@ -1184,6 +1202,19 @@ $relationFields
     }
     final importsCode = imports.toSet().join('\n');
 
+    // Find first string field for displayLabel (prefer name, then title, then first string)
+    final stringFields = regularFields.where((f) => f.type == 'String' || f.type == 'String?').toList();
+    String displayLabelExpr;
+    if (stringFields.any((f) => f.name == 'name')) {
+      displayLabelExpr = "name ?? 'ID: \$id'";
+    } else if (stringFields.any((f) => f.name == 'title')) {
+      displayLabelExpr = "title ?? 'ID: \$id'";
+    } else if (stringFields.isNotEmpty) {
+      displayLabelExpr = "${stringFields.first.name} ?? 'ID: \$id'";
+    } else {
+      displayLabelExpr = "'ID: \$id'";
+    }
+
     final content = '''
 $importsCode
 
@@ -1237,6 +1268,9 @@ $schemaColumns
 $relationRegistrations
   }
 
+  /// Display label for dropdowns and lists (first string field or ID)
+  String get displayLabel => $displayLabelExpr;
+
   @override
   String toString() => '$className(id: \$_id${regularFields.isNotEmpty ? ', ${regularFields.first.name}: \$${regularFields.first.name}' : ''})';
 }
@@ -1253,14 +1287,25 @@ $relationRegistrations
     String makeNullable(String type) => type.endsWith('?') ? type : '$type?';
 
     // Build update lines for regular fields
-    final regularUpdateLines = regularFields.map((f) =>
-      "      if (body.containsKey('${f.name}')) item.${f.name} = body['${f.name}'] as ${makeNullable(f.type)};").join('\n');
+    final regularUpdateLines = regularFields.map((f) {
+      if (f.type == 'bool') {
+        // Handle bool: could be bool, int (0/1), or string
+        return "      if (body.containsKey('${f.name}')) item.${f.name} = body['${f.name}'] == true || body['${f.name}'] == 1 || body['${f.name}'] == '1';";
+      }
+      return "      if (body.containsKey('${f.name}')) item.${f.name} = body['${f.name}'] as ${makeNullable(f.type)};";
+    }).join('\n');
 
     // Build update lines for foreign key fields
     final foreignKeyUpdateLines = belongsToFields.map((f) =>
       "      if (body.containsKey('${f.foreignKey}')) item.${f.foreignKey} = body['${f.foreignKey}'] as int?;").join('\n');
 
     final allUpdateLines = [regularUpdateLines, foreignKeyUpdateLines].where((s) => s.isNotEmpty).join('\n');
+
+    // Generate bool normalization code
+    final boolFields = regularFields.where((f) => f.type == 'bool').toList();
+    final boolNormalizations = boolFields.map((f) =>
+      "    if (normalized.containsKey('${f.name}')) normalized['${f.name}'] = (normalized['${f.name}'] == true || normalized['${f.name}'] == 1 || normalized['${f.name}'] == '1') ? 1 : 0;"
+    ).join('\n');
 
     final content = '''
 import 'package:duxt/server.dart';
@@ -1299,7 +1344,11 @@ void register${className}Routes(DuxtServer server) {
       return json({'error': 'Body required'}, statusCode: 400);
     }
 
-    final item = $className.fromRow(body);
+    // Normalize boolean fields (could be bool, int, or string)
+    final normalized = Map<String, dynamic>.from(body);
+$boolNormalizations
+
+    final item = $className.fromRow(normalized);
     await item.save();
 
     return json({'$singular': item.toJson()}, statusCode: 201);
@@ -1496,11 +1545,29 @@ $allUpdateLines
     }
 
     // Add registration call
+    bool added = false;
+
+    // Pattern 1: After existing register calls
     final registerPattern = RegExp(r'(\w+\.register\(\);)\n(?!\s*\w+\.register)');
     if (registerPattern.hasMatch(content)) {
       content = content.replaceFirstMapped(registerPattern, (m) {
         return "${m.group(1)}\n    $className.register();";
       });
+      added = true;
+    }
+
+    // Pattern 2: After comment marker (first model)
+    if (!added) {
+      final commentPattern = RegExp(r'(// Models are registered by scaffold \(added below\))');
+      if (commentPattern.hasMatch(content)) {
+        content = content.replaceFirstMapped(commentPattern, (m) {
+          return "${m.group(1)}\n    $className.register();";
+        });
+        added = true;
+      }
+    }
+
+    if (added) {
       await file.writeAsString(content);
       print('  \x1B[32m✓\x1B[0m Added $className.register() to server/db.dart');
     }
@@ -1527,25 +1594,155 @@ $allUpdateLines
           return "${m.group(1)}\n$importLine\n";
         });
       } else {
-        // Try generic import pattern
-        final genericPattern = RegExp(r"(import '[^']+';)\n(?!import)");
-        if (genericPattern.hasMatch(content)) {
-          content = content.replaceFirstMapped(genericPattern, (m) {
-            return "${m.group(1)}\n$importLine\n";
+        // Add after app.dart import
+        final appImportPattern = RegExp(r"(import 'app\.dart';)");
+        if (appImportPattern.hasMatch(content)) {
+          content = content.replaceFirstMapped(appImportPattern, (m) {
+            return "${m.group(1)}\n$importLine";
           });
         }
       }
     }
 
-    // Add registration call
+    // Add registration call - try multiple patterns
+    bool added = false;
+
+    // Pattern 1: After existing register calls
     final registerPattern = RegExp(r'(\w+\.register\(\);)\n(?!\s*\w+\.register)');
     if (registerPattern.hasMatch(content)) {
       content = content.replaceFirstMapped(registerPattern, (m) {
         return "${m.group(1)}\n  $className.register();";
       });
+      added = true;
+    }
+
+    // Pattern 2: After comment marker (new template format)
+    if (!added) {
+      final commentPattern = RegExp(r'(// Register models here \(added by scaffold command\))');
+      if (commentPattern.hasMatch(content)) {
+        content = content.replaceFirstMapped(commentPattern, (m) {
+          return "${m.group(1)}\n  $className.register();";
+        });
+        added = true;
+      }
+    }
+
+    // Pattern 3: Before DuxtOrm.init
+    if (!added) {
+      final initPattern = RegExp(r'(\n\s*)(final dataDir|await DuxtOrm\.init)');
+      if (initPattern.hasMatch(content)) {
+        content = content.replaceFirstMapped(initPattern, (m) {
+          return "\n  $className.register();${m.group(1)}${m.group(2)}";
+        });
+        added = true;
+      }
+    }
+
+    if (added) {
       await file.writeAsString(content);
       print('  \x1B[32m✓\x1B[0m Added $className.register() to lib/main.server.dart');
     }
+  }
+
+  /// Ensure a dependency exists in pubspec.yaml, add if missing
+  Future<void> _ensureDependency(String projectDir, String packageName) async {
+    final pubspecPath = p.join(projectDir, 'pubspec.yaml');
+    final file = File(pubspecPath);
+    if (!file.existsSync()) return;
+
+    var content = await file.readAsString();
+
+    // Check if dependency already exists
+    if (RegExp('$packageName:').hasMatch(content)) return;
+
+    // Add dependency after dependencies: line
+    final depsPattern = RegExp(r'(dependencies:\n)');
+    if (depsPattern.hasMatch(content)) {
+      content = content.replaceFirstMapped(depsPattern, (m) {
+        return '${m.group(1)}  $packageName:\n';
+      });
+      await file.writeAsString(content);
+      print('  \x1B[32m✓\x1B[0m Added $packageName to pubspec.yaml');
+
+      // Run dart pub get
+      print('  \x1B[90m→\x1B[0m Installing $packageName...');
+      final result = await Process.run('dart', ['pub', 'get'], workingDirectory: projectDir);
+      if (result.exitCode != 0) {
+        print('  \x1B[33m!\x1B[0m Run "dart pub get" to install dependencies');
+      }
+    }
+  }
+
+  /// Ensure server/main.dart exists for API routes
+  Future<void> _ensureServerMain(String projectDir, String packageName) async {
+    final serverDir = Directory(p.join(projectDir, 'server'));
+    final mainPath = p.join(projectDir, 'server', 'main.dart');
+    final dbPath = p.join(projectDir, 'server', 'db.dart');
+
+    if (File(mainPath).existsSync()) return;
+
+    // Create server directory
+    if (!serverDir.existsSync()) {
+      await serverDir.create(recursive: true);
+    }
+
+    // Create api directory
+    final apiDir = Directory(p.join(projectDir, 'server', 'api'));
+    if (!apiDir.existsSync()) {
+      await apiDir.create(recursive: true);
+    }
+
+    // Create db.dart
+    if (!File(dbPath).existsSync()) {
+      await File(dbPath).writeAsString('''
+import 'dart:io';
+import 'package:duxt_orm/duxt_orm.dart';
+
+class Db {
+  static Future<void> init() async {
+    // Models are registered by scaffold (added below)
+
+    final dataDir = Platform.environment['DATA_DIR'] ?? '.';
+    await DuxtOrm.init((
+      driver: 'sqlite',
+      host: '',
+      port: 0,
+      database: '',
+      username: '',
+      password: '',
+      path: '\$dataDir/app.db',
+      ssl: false,
+    ));
+
+    await DuxtOrm.migrate();
+  }
+}
+''');
+      print('  \x1B[32m✓\x1B[0m server/db.dart');
+    }
+
+    // Create main.dart
+    await File(mainPath).writeAsString('''
+import 'dart:io';
+import 'package:duxt/server.dart';
+import 'db.dart';
+
+void main() async {
+  await Db.init();
+
+  final port = int.tryParse(Platform.environment['PORT'] ?? '') ?? 4001;
+
+  final server = DuxtServer(
+    port: port,
+    middleware: [cors(), jsonBody(), logger()],
+  );
+
+  // Register API routes here (added by scaffold)
+
+  server.start();
+}
+''');
+    print('  \x1B[32m✓\x1B[0m server/main.dart');
   }
 
   /// Add API route registration to server/main.dart
@@ -1579,11 +1776,29 @@ $allUpdateLines
     }
 
     // Add route registration call
+    bool added = false;
+
+    // Pattern 1: After existing register calls
     final routePattern = RegExp(r'(register\w+Routes\(server\);)\n(?!\s*register\w+Routes)');
     if (routePattern.hasMatch(content)) {
       content = content.replaceFirstMapped(routePattern, (m) {
         return "${m.group(1)}\n  register${className}Routes(server);";
       });
+      added = true;
+    }
+
+    // Pattern 2: After comment marker (first registration)
+    if (!added) {
+      final commentPattern = RegExp(r'(// Register API routes here \(added by scaffold\))');
+      if (commentPattern.hasMatch(content)) {
+        content = content.replaceFirstMapped(commentPattern, (m) {
+          return "${m.group(1)}\n  register${className}Routes(server);";
+        });
+        added = true;
+      }
+    }
+
+    if (added) {
       await file.writeAsString(content);
       print('  \x1B[32m✓\x1B[0m Added register${className}Routes() to server/main.dart');
     }

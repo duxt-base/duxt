@@ -21,11 +21,8 @@ class DuxtBuilder {
       }
     }
 
-    // Build frontend (only once, not per target)
-    final publicDir = Directory(p.join(projectDir, outputDir, 'public'));
-    if (!publicDir.existsSync()) {
-      await _buildFrontend(projectDir, outputDir);
-    }
+    // Build frontend (always rebuild to ensure latest changes)
+    await _buildFrontend(projectDir, outputDir);
 
     // Build server if exists
     final serverMain = File(p.join(projectDir, 'server', 'main.dart'));
