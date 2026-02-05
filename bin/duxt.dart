@@ -18,7 +18,7 @@ import 'package:duxt/src/cli/update_command.dart';
 import 'package:duxt/src/cli/version_command.dart';
 import 'package:duxt/src/cli/docs_command.dart';
 
-const version = '0.4.14';
+const version = '0.4.15';
 const minJasprVersion = '0.22.2';
 
 void main(List<String> args) async {
