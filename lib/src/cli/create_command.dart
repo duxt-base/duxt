@@ -23,6 +23,7 @@ enum ProjectMode {
         return ProjectMode.server; // SaaS needs auth/database
       case ProjectTemplate.marketing:
       case ProjectTemplate.minimal:
+      case ProjectTemplate.html:
       case ProjectTemplate.defaultTemplate:
         return ProjectMode.static; // Static content sites
     }
@@ -35,7 +36,8 @@ enum ProjectTemplate {
   minimal('minimal', 'Minimal', 'Clean starting point - just home page and layout'),
   saas('saas', 'SaaS', 'SaaS starter with auth, dashboard, and billing'),
   marketing('marketing', 'Marketing', 'Landing page with hero, features, and pricing'),
-  blog('blog', 'Blog', 'Professional blog with categories and SEO');
+  blog('blog', 'Blog', 'Professional blog with categories and SEO'),
+  html('html', 'HTML', 'Flutter-style HTML components with duxt_html');
 
   final String value;
   final String label;

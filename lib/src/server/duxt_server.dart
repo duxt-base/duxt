@@ -6,6 +6,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_static/shelf_static.dart';
 
 import 'api_handler.dart';
+import '../core/error_html.dart';
 
 /// Duxt Server - Shelf-based HTTP server
 class DuxtServer {
@@ -13,14 +14,18 @@ class DuxtServer {
   final String apiDir;
   final String? staticDir;
   final List<Middleware> middleware;
+  final Duration requestTimeout;
   final Map<String, Handler> _routes = {};
   HttpServer? _server;
+  StreamSubscription? _sigintSub;
+  StreamSubscription? _sigtermSub;
 
   DuxtServer({
     this.port = 3000,
     this.apiDir = 'server/api',
     this.staticDir,
     this.middleware = const [],
+    this.requestTimeout = const Duration(seconds: 30),
   });
 
   /// Register a GET route
@@ -89,9 +94,14 @@ class DuxtServer {
         },
       );
     } catch (e) {
+      // Log full error server-side, return generic message to client
+      print('\x1B[31m[error]\x1B[0m API handler failed: $e');
       return Response.internalServerError(
-        body: jsonEncode({'error': e.toString()}),
-        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'error': 'Internal server error'}),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Content-Type-Options': 'nosniff',
+        },
       );
     }
   }
@@ -147,9 +157,26 @@ class DuxtServer {
         }
       }
 
+      // Content-negotiated 404: HTML for browsers, JSON for API clients
+      final accept = request.headers['accept'] ?? '';
+      if (accept.contains('text/html')) {
+        return Response.notFound(
+          DuxtErrorHtml.notFound(path: path),
+          headers: {
+            'Content-Type': 'text/html',
+            'Vary': 'Accept',
+            'X-Content-Type-Options': 'nosniff',
+            'X-Frame-Options': 'DENY',
+          },
+        );
+      }
       return Response.notFound(
         jsonEncode({'error': 'Not found'}),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Vary': 'Accept',
+          'X-Content-Type-Options': 'nosniff',
+        },
       );
     };
   }
@@ -187,30 +214,48 @@ class DuxtServer {
   /// Start the server
   Future<void> start() async {
     _server = await shelf_io.serve(pipeline, InternetAddress.anyIPv4, port);
+    _server!.idleTimeout = requestTimeout;
     print('Server running at http://localhost:$port');
+
+    // Graceful shutdown on SIGINT and SIGTERM
+    _sigintSub = ProcessSignal.sigint.watch().listen((_) => _shutdown());
+    if (!Platform.isWindows) {
+      _sigtermSub = ProcessSignal.sigterm.watch().listen((_) => _shutdown());
+    }
+  }
+
+  Future<void> _shutdown() async {
+    print('\nShutting down gracefully...');
+    await stop();
+    exit(0);
   }
 
   /// Stop the server
   Future<void> stop() async {
+    _sigintSub?.cancel();
+    _sigtermSub?.cancel();
     await _server?.close();
     _server = null;
   }
 }
 
 /// CORS middleware
+///
+/// By default, no origins are allowed. You must explicitly specify allowed origins.
+/// Use `origins: ['*']` only for public APIs — never for authenticated endpoints.
 Middleware cors({
-  List<String> origins = const ['*'],
+  required List<String> origins,
   List<String> methods = const ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   List<String> headers = const ['Content-Type', 'Authorization'],
 }) {
   return (Handler innerHandler) {
     return (Request request) async {
-      final origin = request.headers['origin'] ?? '*';
+      final origin = request.headers['origin'] ?? '';
       final allowedOrigin = origins.contains('*') ? '*' : (origins.contains(origin) ? origin : null);
 
       if (request.method == 'OPTIONS') {
         return Response.ok('', headers: {
-          'Access-Control-Allow-Origin': allowedOrigin ?? '',
+          if (allowedOrigin != null) 'Access-Control-Allow-Origin': allowedOrigin,
           'Access-Control-Allow-Methods': methods.join(', '),
           'Access-Control-Allow-Headers': headers.join(', '),
         });
@@ -221,6 +266,106 @@ Middleware cors({
         ...response.headers,
         if (allowedOrigin != null) 'Access-Control-Allow-Origin': allowedOrigin,
       });
+    };
+  };
+}
+
+/// Security headers middleware — adds standard security headers to all responses
+Middleware securityHeaders() {
+  return (Handler innerHandler) {
+    return (Request request) async {
+      final response = await innerHandler(request);
+      return response.change(headers: {
+        ...response.headers,
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'X-XSS-Protection': '1; mode=block',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+      });
+    };
+  };
+}
+
+/// Request body size limit middleware
+///
+/// Rejects requests with Content-Length exceeding [maxBytes].
+/// Default limit is 1 MB.
+Middleware bodyLimit({int maxBytes = 1024 * 1024}) {
+  return (Handler innerHandler) {
+    return (Request request) async {
+      final contentLength = request.contentLength;
+      if (contentLength != null && contentLength > maxBytes) {
+        return Response(
+          413,
+          body: jsonEncode({'error': 'Request body too large'}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+      return innerHandler(request);
+    };
+  };
+}
+
+/// Rate limiting middleware
+///
+/// Limits each IP to [maxRequests] per [window]. Uses in-memory storage.
+Middleware rateLimit({
+  int maxRequests = 100,
+  Duration window = const Duration(minutes: 1),
+}) {
+  final _requests = <String, List<DateTime>>{};
+
+  return (Handler innerHandler) {
+    return (Request request) async {
+      final ip = (request.context['shelf.io.connection_info'] as HttpConnectionInfo?)
+          ?.remoteAddress.address ?? 'unknown';
+      final now = DateTime.now();
+      final cutoff = now.subtract(window);
+
+      // Clean old entries and add current
+      final timestamps = (_requests[ip] ?? [])
+          .where((t) => t.isAfter(cutoff))
+          .toList()
+        ..add(now);
+      _requests[ip] = timestamps;
+
+      if (timestamps.length > maxRequests) {
+        return Response(
+          429,
+          body: jsonEncode({'error': 'Too many requests'}),
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': window.inSeconds.toString(),
+          },
+        );
+      }
+
+      return innerHandler(request);
+    };
+  };
+}
+
+/// Request timeout middleware
+///
+/// Returns 504 Gateway Timeout if the handler takes longer than [duration].
+Middleware timeout({Duration duration = const Duration(seconds: 30)}) {
+  return (Handler innerHandler) {
+    return (Request request) async {
+      try {
+        return await Future.any<Response>([
+          Future(() async => await innerHandler(request)),
+          Future.delayed(duration, () => Response(
+            504,
+            body: jsonEncode({'error': 'Request timeout'}),
+            headers: {'Content-Type': 'application/json'},
+          )),
+        ]);
+      } catch (e) {
+        return Response.internalServerError(
+          body: jsonEncode({'error': 'Internal server error'}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
     };
   };
 }
@@ -279,6 +424,48 @@ Middleware auth(Future<bool> Function(Request) verify) {
       return innerHandler(request);
     };
   };
+}
+
+/// CSRF protection middleware
+///
+/// Validates that state-changing requests (POST, PUT, DELETE, PATCH) include
+/// a matching CSRF token in the header. GET/HEAD/OPTIONS are always allowed.
+Middleware csrf({String headerName = 'X-CSRF-Token', String cookieName = 'csrf_token'}) {
+  return (Handler innerHandler) {
+    return (Request request) async {
+      final safeMethods = {'GET', 'HEAD', 'OPTIONS'};
+      if (safeMethods.contains(request.method)) {
+        return innerHandler(request);
+      }
+
+      final cookieHeader = request.headers['cookie'] ?? '';
+      final cookies = _parseCookies(cookieHeader);
+      final cookieToken = cookies[cookieName];
+      final headerToken = request.headers[headerName.toLowerCase()];
+
+      if (cookieToken == null || cookieToken.isEmpty ||
+          headerToken == null || headerToken != cookieToken) {
+        return Response.forbidden(
+          jsonEncode({'error': 'CSRF token mismatch'}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+
+      return innerHandler(request);
+    };
+  };
+}
+
+Map<String, String> _parseCookies(String cookieHeader) {
+  final cookies = <String, String>{};
+  for (final part in cookieHeader.split(';')) {
+    final trimmed = part.trim();
+    final eq = trimmed.indexOf('=');
+    if (eq > 0) {
+      cookies[trimmed.substring(0, eq)] = trimmed.substring(eq + 1);
+    }
+  }
+  return cookies;
 }
 
 /// Extension to get parsed data from request

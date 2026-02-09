@@ -114,6 +114,7 @@ jaspr:
 const _minimalAppTemplate = r'''
 import 'package:jaspr/jaspr.dart';
 import 'package:jaspr_router/jaspr_router.dart';
+import 'package:duxt/duxt.dart';
 
 // Generated routes
 import '.generated/routes.dart' as generated;
@@ -135,7 +136,10 @@ class App extends StatelessComponent {
       ),
     )).toList();
 
-    return Router(routes: wrappedRoutes);
+    return Router(
+      routes: wrappedRoutes,
+      errorBuilder: DuxtErrorPage.routerErrorBuilder,
+    );
   }
 }
 ''';

@@ -2,6 +2,7 @@
 const appTemplate = r'''
 import 'package:jaspr/jaspr.dart';
 import 'package:jaspr_router/jaspr_router.dart';
+import 'package:duxt/duxt.dart';
 import 'package:duxt/content.dart';
 
 // Generated routes
@@ -29,7 +30,10 @@ class App extends StatelessComponent {
       ),
     )).toList();
 
-    return Router(routes: wrappedRoutes);
+    return Router(
+      routes: wrappedRoutes,
+      errorBuilder: DuxtErrorPage.routerErrorBuilder,
+    );
   }
 }
 ''';

@@ -2,6 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-02-09
+
+### Added
+- **Security middleware suite** - New production-ready middleware for DuxtServer:
+  - `securityHeaders()` - X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy
+  - `bodyLimit()` - Reject oversized request bodies (default 1 MB)
+  - `rateLimit()` - Per-IP rate limiting (default 100 req/min)
+  - `timeout()` - Request timeout with 504 response (default 30s)
+  - `csrf()` - CSRF token validation on state-changing requests
+- **Graceful shutdown** - DuxtServer handles SIGINT/SIGTERM for clean process termination
+- **Request timeout** - Configurable `requestTimeout` on DuxtServer with idle connection timeout
+- **Built-in error pages** - Styled 404/500 pages for all contexts:
+  - `DuxtErrorPage` Jaspr component with Tailwind CSS (SPA router errors)
+  - `DuxtErrorHtml` static HTML generator (CLI servers, static hosting)
+  - All templates wire `Router(errorBuilder: DuxtErrorPage.routerErrorBuilder)`
+  - `duxt build` generates `404.html` for static hosting (Netlify, Vercel, GitHub Pages, Cloudflare)
+- **Security documentation** - New `/duxt/security` docs page with production checklist
+- **SECURITY.md** - Security policy and vulnerability reporting
+
+### Changed
+- **BREAKING: `cors()` now requires explicit `origins` parameter** - No more default `['*']`. You must specify allowed origins explicitly.
+- All generated server templates now include `securityHeaders()`, `bodyLimit()`, and explicit CORS origins
+- `duxt build` excludes `.env`, `.env.local`, `.env.production`, `.env.development`, `.git`, `node_modules` from output
+- Docker image pinned to `dart:3.7` instead of `dart:stable` for reproducible builds
+- `pkill` in `duxt dev` scoped to current project directory (no longer kills unrelated processes)
+
+### Fixed
+- **Path traversal protection** on `duxt start` and `duxt preview` static file serving (canonicalization + prefix check)
+- **Content loader path traversal** in `readPartial()` — validates paths stay within project directory
+- **Template injection** in scaffold command — module names, field names, and relation models validated with regex
+- **Exception information disclosure** in generated server templates — `e.toString()` replaced with generic messages, full errors logged server-side
+- **XSS prevention** in error pages — all reflected paths HTML-escaped and truncated to 500 chars
+- **Server fingerprinting** removed "Powered by Duxt" from error page footers
+- **Double-slash bug** in DuxtServer 404 path
+
+### Security
+- Content-negotiated 404 responses with `Vary: Accept` header (prevents cache poisoning)
+- Security headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`) on all server responses
+- Generic error messages to clients with full error logging server-side
+
 ## [0.4.15] - 2026-02-05
 
 ### Added

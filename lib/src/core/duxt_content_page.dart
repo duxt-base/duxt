@@ -9,6 +9,8 @@ import 'package:jaspr/server.dart';
 import 'package:jaspr_router/jaspr_router.dart' show RouteBase;
 import 'package:jaspr_content/jaspr_content.dart';
 import 'package:jaspr_content/theme.dart';
+import 'package:path/path.dart' as p;
+import '../components/error_page.dart';
 
 export 'package:jaspr_content/jaspr_content.dart'
     show PageLayoutBase, CustomComponent, PageExtension;
@@ -67,7 +69,7 @@ class DuxtContentPage extends AsyncStatelessComponent {
   Future<Component> build(BuildContext context) async {
     final file = File(routeInfo.filePath);
     if (!file.existsSync()) {
-      return _buildErrorPage('Content file not found: ${routeInfo.filePath}');
+      return _buildErrorPage('Content not found');
     }
 
     final content = await file.readAsString();
@@ -99,7 +101,11 @@ class DuxtContentPage extends AsyncStatelessComponent {
   }
 
   Component _buildErrorPage(String message) {
-    return Component.text(message);
+    return DuxtErrorPage(
+      statusCode: 404,
+      path: routeInfo.path,
+      message: message,
+    );
   }
 }
 
@@ -134,20 +140,33 @@ class _SinglePageLoader implements RouteLoader {
 
   @override
   Future<String> readPartial(String path, Page page) async {
-    final file = File(path);
+    // Prevent path traversal: partials must resolve within the project
+    final canonical = p.canonicalize(path);
+    final projectDir = p.canonicalize(Directory.current.path);
+    if (!canonical.startsWith(projectDir)) {
+      throw Exception('Partial path outside project');
+    }
+
+    final file = File(canonical);
     if (await file.exists()) {
       return await file.readAsString();
     }
-    throw Exception('Partial not found: $path');
+    throw Exception('Partial not found');
   }
 
   @override
   String readPartialSync(String path, Page page) {
-    final file = File(path);
+    final canonical = p.canonicalize(path);
+    final projectDir = p.canonicalize(Directory.current.path);
+    if (!canonical.startsWith(projectDir)) {
+      throw Exception('Partial path outside project');
+    }
+
+    final file = File(canonical);
     if (file.existsSync()) {
       return file.readAsStringSync();
     }
-    throw Exception('Partial not found: $path');
+    throw Exception('Partial not found');
   }
 
   @override

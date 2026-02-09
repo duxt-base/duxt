@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
+import '../core/error_html.dart';
 
 /// Command to preview production build locally
 /// Usage: duxt preview [--port=4000] [--api-port=3001]
@@ -144,6 +145,11 @@ class PreviewCommand extends Command<int> {
   }
 
   Future<void> _handleRequest(HttpRequest request, String buildDir) async {
+    // Security headers on all responses
+    request.response.headers
+      ..set('X-Content-Type-Options', 'nosniff')
+      ..set('X-Frame-Options', 'DENY');
+
     var path = request.uri.path;
 
     // Default to index.html
@@ -153,6 +159,16 @@ class PreviewCommand extends Command<int> {
 
     // Try to serve the file
     var file = File('$buildDir$path');
+
+    // Path traversal protection: verify resolved path stays within buildDir
+    if (!_isWithinDir(file, buildDir)) {
+      request.response
+        ..statusCode = HttpStatus.forbidden
+        ..headers.contentType = ContentType.html
+        ..write(DuxtErrorHtml.notFound(path: request.uri.path));
+      await request.response.close();
+      return;
+    }
 
     // If file doesn't exist and doesn't have extension, try .html
     if (!file.existsSync() && !path.contains('.')) {
@@ -177,10 +193,18 @@ class PreviewCommand extends Command<int> {
     } else {
       request.response
         ..statusCode = HttpStatus.notFound
-        ..write('Not Found');
+        ..headers.contentType = ContentType.html
+        ..write(DuxtErrorHtml.notFound(path: request.uri.path));
     }
 
     await request.response.close();
+  }
+
+  /// Verify that a file path resolves to within the given directory.
+  bool _isWithinDir(File file, String dir) {
+    final canonicalDir = p.canonicalize(dir);
+    final canonicalFile = p.canonicalize(file.path);
+    return canonicalFile.startsWith(canonicalDir);
   }
 
   ContentType _getContentType(String path) {

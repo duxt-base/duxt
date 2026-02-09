@@ -26,4 +26,7 @@ export 'src/runtime/composable.dart';
 export 'src/runtime/api.dart';
 export 'src/runtime/duxt_state.dart';
 
+// Components
+export 'src/components/error_page.dart';
+
 // Content exports are available via 'package:duxt/content.dart'

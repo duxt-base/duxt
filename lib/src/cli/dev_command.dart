@@ -96,9 +96,9 @@ class DevCommand extends Command<int> {
       print('  \x1B[33m!\x1B[0m Tailwind compilation skipped (tailwindcss not found)');
     }
 
-    // Kill stale build daemons that may be holding ports
+    // Kill stale build daemons that may be holding ports (scoped to this project)
     print('\x1B[90m→\x1B[0m Cleaning up stale processes...');
-    await Process.run('pkill', ['-f', 'build_runner']);
+    await Process.run('pkill', ['-f', 'build_runner.*${projectDir.replaceAll('/', '\\/')}']);
     await Future.delayed(const Duration(milliseconds: 500));
 
     // Generate routes
@@ -643,7 +643,7 @@ class DevCommand extends Command<int> {
 
   /// Sync duxt_ui package to .duxt/packages/ for Tailwind CSS scanning
   Future<void> _syncPackages(String projectDir) async {
-    final packagesToSync = ['duxt_ui'];
+    final packagesToSync = ['duxt_ui', 'duxt'];
     final targetDir = Directory(p.join(projectDir, '.duxt', 'packages'));
 
     // Read package_config.json to find package locations

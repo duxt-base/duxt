@@ -48,7 +48,18 @@ class ScaffoldCommand extends Command<int> {
       return 1;
     }
 
-    final moduleName = argResults!.rest[0].toLowerCase();
+    final rawName = argResults!.rest[0].toLowerCase();
+
+    // Validate module name: only lowercase letters, numbers, underscores
+    final validNameRegex = RegExp(r'^[a-z][a-z0-9_]*$');
+    if (!validNameRegex.hasMatch(rawName)) {
+      print('Error: "$rawName" is not a valid module name.');
+      print('Module names must start with a lowercase letter and contain only');
+      print('lowercase letters, numbers, and underscores.');
+      return 1;
+    }
+
+    final moduleName = rawName;
     final fields = _parseFields(argResults!.rest.skip(1).toList());
     final force = argResults!['force'] as bool;
     final apiOnly = argResults!['api-only'] as bool;
@@ -184,29 +195,47 @@ class ScaffoldCommand extends Command<int> {
   }
 
   List<FieldDef> _parseFields(List<String> args) {
+    final validFieldName = RegExp(r'^[a-zA-Z_][a-zA-Z0-9_]*$');
     final fields = <FieldDef>[];
     for (final arg in args) {
       if (arg.contains(':')) {
         final parts = arg.split(':');
         final name = parts[0];
+
+        // Validate field name to prevent code injection
+        if (!validFieldName.hasMatch(name)) {
+          print('Warning: Skipping invalid field name "$name"');
+          continue;
+        }
+
         final typeOrRelation = parts[1].toLowerCase();
 
         // Check for relation syntax: field:belongsTo:Model or field:toMany:Model
         if (typeOrRelation == 'belongsto' && parts.length >= 3) {
+          final relModel = parts[2];
+          if (!validFieldName.hasMatch(relModel)) {
+            print('Warning: Skipping invalid relation model "$relModel"');
+            continue;
+          }
           fields.add(FieldDef(
             name: name,
             type: 'int', // Foreign key is int
             isRelation: true,
             relationType: 'belongsTo',
-            relatedModel: parts[2],
+            relatedModel: relModel,
           ));
         } else if (typeOrRelation == 'tomany' && parts.length >= 3) {
+          final relModel = parts[2];
+          if (!validFieldName.hasMatch(relModel)) {
+            print('Warning: Skipping invalid relation model "$relModel"');
+            continue;
+          }
           fields.add(FieldDef(
             name: name,
-            type: 'List<${parts[2]}>',
+            type: 'List<$relModel>',
             isRelation: true,
             relationType: 'toMany',
-            relatedModel: parts[2],
+            relatedModel: relModel,
           ));
         } else {
           fields.add(FieldDef(name: name, type: _normalizeType(parts[1])));
@@ -1734,7 +1763,7 @@ void main() async {
 
   final server = DuxtServer(
     port: port,
-    middleware: [cors(), jsonBody(), logger()],
+    middleware: [securityHeaders(), bodyLimit(), cors(origins: [\'http://localhost:4000\']), jsonBody(), logger()],
   );
 
   // Register API routes here (added by scaffold)

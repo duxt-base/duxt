@@ -144,7 +144,7 @@ class BuildCommand extends Command<int> {
 
   /// Sync duxt_ui package to .duxt/packages/
   Future<void> _syncPackages(String projectDir) async {
-    final packagesToSync = ['duxt_ui'];
+    final packagesToSync = ['duxt_ui', 'duxt'];
     final targetDir = Directory(p.join(projectDir, '.duxt', 'packages'));
 
     final packageConfigFile = File(p.join(projectDir, '.dart_tool', 'package_config.json'));

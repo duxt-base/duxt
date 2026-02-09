@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import 'error_html.dart';
 
 /// Builds Duxt project for production
 class DuxtBuilder {
@@ -50,6 +51,10 @@ class DuxtBuilder {
     final publicDir = Directory(p.join(projectDir, outputDir, 'public'));
 
     await _copyDirectory(jasprOutput, publicDir);
+
+    // Generate 404.html for static hosting (Netlify, Vercel, GitHub Pages, Cloudflare)
+    final errorPage = File(p.join(publicDir.path, '404.html'));
+    await errorPage.writeAsString(DuxtErrorHtml.notFound());
   }
 
   static Future<void> _buildServer(String projectDir, String outputDir, {String? target}) async {
@@ -156,7 +161,7 @@ class DuxtBuilder {
         '--platform', dockerArch,
         '-v', '$projectDir:/app',
         '-w', '/app',
-        'dart:stable',
+        'dart:3.7',
         'dart', 'compile', 'exe', 'server/main.dart', '-o', serverBinary,
       ],
       workingDirectory: projectDir,
@@ -192,11 +197,20 @@ class DuxtBuilder {
     return 'jaspr';
   }
 
+  static const _excludedFiles = {'.env', '.env.local', '.env.production', '.env.development'};
+  static const _excludedDirs = {'.git', 'node_modules', '.dart_tool'};
+
   static Future<void> _copyDirectory(Directory source, Directory destination) async {
     destination.createSync(recursive: true);
 
     await for (final entity in source.list(recursive: false)) {
-      final newPath = p.join(destination.path, p.basename(entity.path));
+      final name = p.basename(entity.path);
+
+      // Skip sensitive files and directories
+      if (entity is File && _excludedFiles.contains(name)) continue;
+      if (entity is Directory && _excludedDirs.contains(name)) continue;
+
+      final newPath = p.join(destination.path, name);
 
       if (entity is File) {
         entity.copySync(newPath);

@@ -37,7 +37,7 @@ void main() async {
 
   final server = DuxtServer(
     port: port,
-    middleware: [cors(), jsonBody(), logger()],
+    middleware: [securityHeaders(), bodyLimit(), cors(origins: [\'http://localhost:4000\']), jsonBody(), logger()],
   );
 
   registerCategoryRoutes(server);
@@ -140,7 +140,7 @@ void main() async {
 
   final server = DuxtServer(
     port: port,
-    middleware: [cors(), jsonBody(), logger()],
+    middleware: [securityHeaders(), bodyLimit(), cors(origins: [\'http://localhost:4000\']), jsonBody(), logger()],
   );
 
   registerCategoryRoutes(server);
@@ -508,7 +508,8 @@ void registerCategoryRoutes(DuxtServer server) {
       await category.save();
       return json({'category': category.toJson()}, statusCode: 201);
     } catch (e) {
-      return json({'error': e.toString()}, statusCode: 400);
+      print('Create failed: \$e');
+      return json({'error': 'Invalid request data'}, statusCode: 400);
     }
   });
 }
@@ -652,7 +653,8 @@ void registerTagRoutes(DuxtServer server) {
       await tag.save();
       return json({'tag': tag.toJson()}, statusCode: 201);
     } catch (e) {
-      return json({'error': e.toString()}, statusCode: 400);
+      print('Create failed: \$e');
+      return json({'error': 'Invalid request data'}, statusCode: 400);
     }
   });
 
@@ -953,7 +955,8 @@ void registerPostRoutes(DuxtServer server) {
       await post.save();
       return json({'post': post.toJson()}, statusCode: 201);
     } catch (e) {
-      return json({'error': e.toString()}, statusCode: 400);
+      print('Create failed: \$e');
+      return json({'error': 'Invalid request data'}, statusCode: 400);
     }
   });
 

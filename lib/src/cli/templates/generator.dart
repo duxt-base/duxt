@@ -10,6 +10,7 @@ import 'server.dart';
 import 'web.dart';
 import 'minimal.dart';
 import 'marketing.dart';
+import 'html.dart';
 
 /// Generates a new Duxt project from templates
 class TemplateGenerator {
@@ -28,6 +29,8 @@ class TemplateGenerator {
         await MarketingTemplate.generate(dartName, targetDir, mode: mode);
       case 'blog':
         await _generateBlog(dartName, targetDir, mode: mode);
+      case 'html':
+        await HtmlTemplate.generate(dartName, targetDir, mode: mode);
       default:
         await _generateDefault(dartName, targetDir, mode: mode);
     }
@@ -271,6 +274,7 @@ class TemplateGenerator {
 const _blogAppTemplate = r'''
 import 'package:jaspr/jaspr.dart';
 import 'package:jaspr_router/jaspr_router.dart';
+import 'package:duxt/duxt.dart';
 
 import '.generated/routes.dart' as generated;
 import 'shared/layouts/default.dart';
@@ -289,7 +293,10 @@ class App extends StatelessComponent {
       ),
     )).toList();
 
-    return Router(routes: wrappedRoutes);
+    return Router(
+      routes: wrappedRoutes,
+      errorBuilder: DuxtErrorPage.routerErrorBuilder,
+    );
   }
 }
 ''';

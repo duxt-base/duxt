@@ -129,6 +129,7 @@ jaspr:
 const _marketingAppTemplate = r'''
 import 'package:jaspr/jaspr.dart';
 import 'package:jaspr_router/jaspr_router.dart';
+import 'package:duxt/duxt.dart';
 
 import '.generated/routes.dart' as generated;
 import 'shared/layouts/default.dart';
@@ -147,7 +148,10 @@ class App extends StatelessComponent {
       ),
     )).toList();
 
-    return Router(routes: wrappedRoutes);
+    return Router(
+      routes: wrappedRoutes,
+      errorBuilder: DuxtErrorPage.routerErrorBuilder,
+    );
   }
 }
 ''';
