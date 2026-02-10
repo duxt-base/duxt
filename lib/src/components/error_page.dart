@@ -77,7 +77,7 @@ class DuxtErrorPage extends StatelessComponent {
               [
                 span(
                   classes: 'font-mono text-sm text-gray-500 break-all',
-                  [Component.text(displayPath!)],
+                  [Component.text(displayPath)],
                 ),
               ],
             ),

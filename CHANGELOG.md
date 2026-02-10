@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - 2026-02-10
+
+### Changed
+- **Simplified templates to 3** — replaced 6 templates (default, minimal, marketing, blog, html, saas) with 3 clean templates matching rendering modes:
+  - `static` (SSG) — marketing sites, landing pages, docs. Hero + features + CTA + about page.
+  - `server` (SSR) — dynamic apps with blog, Post model, API routes, DuxtORM, Docker.
+  - `client` (SPA) — interactive apps with reactive counter, form validation, duxt_signals.
+- **All generated code uses duxt_html** — `Div()`, `Text()`, `Button()`, `className:`, `children:` instead of Jaspr's `div()`, `Component.text()`, `classes:`, positional args.
+- **Template = mode** — single selection prompt instead of separate template + mode choices. The `--mode` flag is removed; use `--template` (or `-t`) instead.
+- **Fixed duxt.config.dart** — each template generates the correct mode (`static`, `server`, `client`) instead of hardcoded `spa`.
+
+### Removed
+- Old template files: `minimal.dart`, `marketing.dart`, `html.dart`, `blog.dart`
+- `ProjectMode` enum and separate mode selection prompt
+- `--mode` CLI flag (template selection now determines the mode)
+
 ## [0.5.0] - 2026-02-09
 
 ### Added
