@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>404 - Page Not Found</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #030712;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #e2e8f0;
+    }
+    .container {
+      text-align: center;
+      padding: 2rem;
+      max-width: 480px;
+    }
+    .status-code {
+      font-size: 8rem;
+      font-weight: 800;
+      line-height: 1;
+      color: #06b6d4;
+      text-shadow: 0 0 80px rgba(6, 182, 212, 0.15);
+      margin-bottom: 1rem;
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    .description {
+      color: #94a3b8;
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+    .home-link {
+      display: inline-block;
+      margin-top: 2rem;
+      padding: 0.75rem 2rem;
+      background: #06b6d4;
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 500;
+      font-size: 0.875rem;
+      transition: opacity 0.2s;
+    }
+    .home-link:hover { opacity: 0.85; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="status-code">404</div>
+    <h1>Page Not Found</h1>
+    <p class="description">The page you are looking for does not exist or has been moved.</p>
+    
+    <a href="/" class="home-link">Go Home</a>
+  </div>
+</body>
+</html>

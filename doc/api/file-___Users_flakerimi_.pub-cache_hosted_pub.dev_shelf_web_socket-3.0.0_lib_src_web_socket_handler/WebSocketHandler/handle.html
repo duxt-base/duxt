@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
+  <meta name="description" content="API docs for the handle method from the WebSocketHandler class, for the Dart programming language.">
+  <title>handle method - WebSocketHandler class - web_socket_handler library - Dart API</title>
+
+
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  
+  <link rel="stylesheet" href="../../static-assets/github.css?v1">
+  <link rel="stylesheet" href="../../static-assets/styles.css?v1">
+  <link rel="icon" href="../../static-assets/favicon.png?v1">
+  
+</head>
+
+<body data-base-href="../../" data-using-base-href="false" class="light-theme">
+<div id="overlay-under-drawer"></div>
+<header id="title">
+  <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
+  <ol class="breadcrumbs gt-separated dark hidden-xs">
+    <li><a href="../../index.html">shelf_web_socket</a></li>
+    <li><a href="../../file-___Users_flakerimi_.pub-cache_hosted_pub.dev_shelf_web_socket-3.0.0_lib_src_web_socket_handler/">src&#47;web_socket_handler.dart</a></li>
+    <li><a href="../../file-___Users_flakerimi_.pub-cache_hosted_pub.dev_shelf_web_socket-3.0.0_lib_src_web_socket_handler/WebSocketHandler-class.html">WebSocketHandler</a></li>
+    <li class="self-crumb">handle method</li>
+  </ol>
+  <div class="self-name">handle</div>
+  <form class="search navbar-right" role="search">
+    <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+  <button class="toggle" id="theme-button" title="Toggle between light and dark mode" aria-label="Light and dark mode toggle">
+    <span id="dark-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      dark_mode
+    </span>
+    <span id="light-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      light_mode
+    </span>
+  </button>
+</header>
+<main>
+<div
+    id="dartdoc-main-content"
+    class="main-content"
+    data-above-sidebar="file-___Users_flakerimi_.pub-cache_hosted_pub.dev_shelf_web_socket-3.0.0_lib_src_web_socket_handler&#47;WebSocketHandler-class-sidebar.html"
+    data-below-sidebar="">
+    <div>
+<h1><span class="kind-method">handle</span> method 
+</h1></div>
+
+    <section class="multi-line-signature">
+      
+<span class="returntype">dynamic</span>
+<span class="name ">handle</span>(<wbr><ol class="parameter-list single-line"> <li><span class="parameter" id="handle-param-request"><span class="type-annotation">dynamic</span> <span class="parameter-name">request</span></span></li>
+</ol>)
+
+      
+
+    </section>
+    
+<section class="desc markdown">
+  <p>The <code>Handler</code>.</p>
+</section>
+
+
+    
+<section class="summary source-code" id="source">
+  <h2><span>Implementation</span></h2>
+  <pre class="language-dart"><code class="language-dart">Response handle(Request request) {
+  if (request.method != &#39;GET&#39;) return _notFound();
+
+  final connection = request.headers[&#39;Connection&#39;];
+  if (connection == null) return _notFound();
+  final tokens =
+      connection.toLowerCase().split(&#39;,&#39;).map((token) =&gt; token.trim());
+  if (!tokens.contains(&#39;upgrade&#39;)) return _notFound();
+
+  final upgrade = request.headers[&#39;Upgrade&#39;];
+  if (upgrade == null) return _notFound();
+  if (upgrade.toLowerCase() != &#39;websocket&#39;) return _notFound();
+
+  final version = request.headers[&#39;Sec-WebSocket-Version&#39;];
+  if (version == null) {
+    return _badRequest(&#39;missing Sec-WebSocket-Version header.&#39;);
+  } else if (version != &#39;13&#39;) {
+    return _notFound();
+  }
+
+  if (request.protocolVersion != &#39;1.1&#39;) {
+    return _badRequest(&#39;unexpected HTTP version &#39;
+        &#39;&quot;${request.protocolVersion}&quot;.&#39;);
+  }
+
+  final key = request.headers[&#39;Sec-WebSocket-Key&#39;];
+  if (key == null) return _badRequest(&#39;missing Sec-WebSocket-Key header.&#39;);
+
+  if (!request.canHijack) {
+    throw ArgumentError(&#39;webSocketHandler may only be used with a server &#39;
+        &#39;that supports request hijacking.&#39;);
+  }
+
+  &#47;&#47; The Origin header is always set by browser connections. By filtering out
+  &#47;&#47; unexpected origins, we ensure that malicious JavaScript is unable to fake
+  &#47;&#47; a WebSocket handshake.
+  final origin = request.headers[&#39;Origin&#39;];
+  if (origin != null &amp;&amp;
+      _allowedOrigins != null &amp;&amp;
+      !_allowedOrigins.contains(origin.toLowerCase())) {
+    return _forbidden(&#39;invalid origin &quot;$origin&quot;.&#39;);
+  }
+
+  final protocol = _chooseProtocol(request);
+  request.hijack((channel) {
+    final sink = utf8.encoder.startChunkedConversion(channel.sink)
+      ..add(&#39;HTTP&#47;1.1 101 Switching Protocols\r\n&#39;
+          &#39;Upgrade: websocket\r\n&#39;
+          &#39;Connection: Upgrade\r\n&#39;
+          &#39;Sec-WebSocket-Accept: ${WebSocketChannel.signKey(key)}\r\n&#39;);
+    if (protocol != null) sink.add(&#39;Sec-WebSocket-Protocol: $protocol\r\n&#39;);
+    sink.add(&#39;\r\n&#39;);
+
+    if (channel.sink is! Socket) {
+      throw ArgumentError(&#39;channel.sink must be a dart:io `Socket`.&#39;);
+    }
+
+    final webSocket = WebSocket.fromUpgradedSocket(channel.sink as Socket,
+        protocol: protocol, serverSide: true)
+      ..pingInterval = _pingInterval;
+
+    _onConnection(IOWebSocketChannel(webSocket), protocol);
+  });
+}</code></pre>
+</section>
+
+
+  </div> <!-- /.main-content -->
+  <div id="dartdoc-sidebar-left" class="sidebar sidebar-offcanvas-left">
+    <!-- The search input and breadcrumbs below are only responsively visible at low resolutions. -->
+<header id="header-search-sidebar" class="hidden-l">
+  <form class="search-sidebar" role="search">
+    <input type="text" id="search-sidebar" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+</header>
+<ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
+    <li><a href="../../index.html">shelf_web_socket</a></li>
+    <li><a href="../../file-___Users_flakerimi_.pub-cache_hosted_pub.dev_shelf_web_socket-3.0.0_lib_src_web_socket_handler/">web_socket_handler</a></li>
+    <li><a href="../../file-___Users_flakerimi_.pub-cache_hosted_pub.dev_shelf_web_socket-3.0.0_lib_src_web_socket_handler/WebSocketHandler-class.html">WebSocketHandler</a></li>
+    <li class="self-crumb">handle method</li>
+</ol>
+
+    <h5>WebSocketHandler class</h5>
+    <div id="dartdoc-sidebar-left-content"></div>
+  </div><!--/.sidebar-offcanvas-->
+  <div id="dartdoc-sidebar-right" class="sidebar sidebar-offcanvas-right">
+</div><!--/.sidebar-offcanvas-->
+</main>
+<footer>
+  <span class="no-break">
+    shelf_web_socket
+      3.0.0
+  </span>
+  
+</footer>
+
+
+<script src="../../static-assets/highlight.pack.js?v1"></script>
+<script src="../../static-assets/docs.dart.js"></script>
+
+</body>
+</html>
+

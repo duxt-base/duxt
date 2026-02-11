@@ -1,0 +1,1 @@
+{"name":"GitHubButton","id":["jaspr_content","lib/components/github_button.dart"],"import":"package:jaspr_content/components/github_button.dart","params":[{"name":"repo","isNamed":true,"decoder":"p['repo'] as String","encoder":"c.repo"}]}

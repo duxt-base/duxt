@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.7] - 2026-02-11
+
+- fix version display in duxt update/version commands
+
 ## [0.5.6] - 2026-02-11
 
 ### Added
