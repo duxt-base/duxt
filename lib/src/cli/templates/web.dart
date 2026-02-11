@@ -37,7 +37,7 @@ String indexHtmlTemplate(String title) => '''
 </head>
 <body>
   <div id="app"></div>
-  <script type="module" src="/main.client.dart.js"></script>
+  <script defer src="/main.client.dart.js"></script>
 </body>
 </html>
 ''';

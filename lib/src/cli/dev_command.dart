@@ -129,8 +129,27 @@ class DevCommand extends Command<int> {
     final devToolsPort = port + 4; // WebSocket port for dev tools
     final devTools = _DevTools(devToolsPort);
 
-    // Start dev tools WebSocket server
-    await devTools.start();
+    // Start dev tools WebSocket server (non-fatal if port is busy)
+    try {
+      await devTools.start();
+    } catch (e) {
+      // Kill stale process on the port and retry once
+      try {
+        final result = await Process.run('lsof', ['-ti', ':$devToolsPort']);
+        final pids = result.stdout.toString().trim();
+        if (pids.isNotEmpty) {
+          for (final pid in pids.split('\n')) {
+            if (pid.trim().isNotEmpty) {
+              await Process.run('kill', ['-9', pid.trim()]);
+            }
+          }
+          await Future.delayed(const Duration(milliseconds: 500));
+          await devTools.start();
+        }
+      } catch (_) {
+        print('  \x1B[33m!\x1B[0m DevTools overlay unavailable (port $devToolsPort in use)');
+      }
+    }
 
     final hasApi = !noApi && File('$projectDir/server/main.dart').existsSync();
 
@@ -355,7 +374,23 @@ class DevCommand extends Command<int> {
     conf['build'] = build;
     await confFile.writeAsString(jsonEncode(conf));
 
-    print('');
+    // Wait for web assets to be ready before opening the window
+    print('\x1B[90m→\x1B[0m Waiting for web assets to compile...');
+    final client = HttpClient();
+    for (var i = 0; i < 120; i++) {
+      try {
+        final req = await client.getUrl(Uri.parse('http://localhost:$port/main.client.dart.js'));
+        final res = await req.close();
+        await res.drain();
+        if (res.statusCode == 200) {
+          print('  Web assets ready');
+          break;
+        }
+      } catch (_) {}
+      await Future.delayed(const Duration(seconds: 1));
+    }
+    client.close();
+
     print('\x1B[90m→\x1B[0m Launching Tauri desktop window...');
 
     final process = await Process.start(

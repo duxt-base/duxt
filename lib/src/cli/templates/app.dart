@@ -43,12 +43,13 @@ const mainClientTemplate = r'''
 import 'package:jaspr/client.dart';
 import 'package:duxt/duxt.dart';
 
+import 'app.dart';
 import 'main.client.options.dart';
 
 void main() {
   Api.configure(baseUrl: '/api');
   Jaspr.initializeApp(options: defaultClientOptions);
-  runApp(const ClientApp());
+  runApp(App());
 }
 ''';
 

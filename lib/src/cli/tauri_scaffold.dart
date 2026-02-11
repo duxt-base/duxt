@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 
@@ -55,9 +56,9 @@ class TauriScaffold {
     await File(p.join(capsDir, 'default.json')).writeAsString(defaultCapability);
     print('  Created src-tauri/capabilities/default.json');
 
-    // Placeholder icons
-    await _writePlaceholderIcon(iconsDir);
-    print('  Created src-tauri/icons/ (placeholder)');
+    // Icons
+    await _writeIcons(iconsDir, projectDir);
+    print('  Created src-tauri/icons/');
   }
 
   // ---------------------------------------------------------------------------
@@ -148,34 +149,54 @@ fn main() {
 }
 ''';
 
-  /// Generate proper RGBA PNG icons at the sizes Tauri expects
-  static Future<void> _writePlaceholderIcon(String iconsDir) async {
-    final png32 = _generateRgbaPng(32, 32);
-    final png128 = _generateRgbaPng(128, 128);
+  /// Generate icons from bundled Duxt squircle icon asset.
+  /// Uses `cargo tauri icon` if available, otherwise copies the source PNG.
+  static Future<void> _writeIcons(String iconsDir, String projectDir) async {
+    try {
+      final assetUri = await Isolate.resolvePackageUri(
+        Uri.parse('package:duxt/src/cli/assets/icon.png'),
+      );
+      if (assetUri != null) {
+        final iconFile = File.fromUri(assetUri);
+        if (await iconFile.exists()) {
+          // Try cargo tauri icon to generate all sizes/formats
+          final result = await Process.run(
+            'cargo',
+            ['tauri', 'icon', iconFile.path],
+            workingDirectory: projectDir,
+          );
+          if (result.exitCode == 0) return;
 
-    await File(p.join(iconsDir, '32x32.png')).writeAsBytes(png32);
-    await File(p.join(iconsDir, '128x128.png')).writeAsBytes(png128);
+          // Fallback: copy the source PNG for each expected icon slot
+          final bytes = await iconFile.readAsBytes();
+          await File(p.join(iconsDir, '32x32.png')).writeAsBytes(bytes);
+          await File(p.join(iconsDir, '128x128.png')).writeAsBytes(bytes);
+          await File(p.join(iconsDir, 'icon.icns')).writeAsBytes(bytes);
+          await File(p.join(iconsDir, 'icon.ico')).writeAsBytes(bytes);
+          return;
+        }
+      }
+    } catch (_) {}
 
-    // .icns and .ico — write PNG as placeholder; Tauri will warn but not fail
-    await File(p.join(iconsDir, 'icon.icns')).writeAsBytes(png128);
-    await File(p.join(iconsDir, 'icon.ico')).writeAsBytes(png32);
+    // Last resort: generate a minimal cyan placeholder
+    final png = _generateCyanPng(128, 128);
+    await File(p.join(iconsDir, '32x32.png')).writeAsBytes(png);
+    await File(p.join(iconsDir, '128x128.png')).writeAsBytes(png);
+    await File(p.join(iconsDir, 'icon.icns')).writeAsBytes(png);
+    await File(p.join(iconsDir, 'icon.ico')).writeAsBytes(png);
   }
 
   /// Generate a minimal valid RGBA PNG filled with Duxt cyan (#06b6d4)
-  static Uint8List _generateRgbaPng(int width, int height) {
+  static Uint8List _generateCyanPng(int width, int height) {
     final out = BytesBuilder();
+    out.add([137, 80, 78, 71, 13, 10, 26, 10]); // PNG signature
 
-    // PNG signature
-    out.add([137, 80, 78, 71, 13, 10, 26, 10]);
-
-    // IHDR chunk
     final ihdr = BytesBuilder();
     ihdr.add(_uint32BE(width));
     ihdr.add(_uint32BE(height));
-    ihdr.add([8, 6, 0, 0, 0]); // 8-bit RGBA, deflate, no filter, no interlace
+    ihdr.add([8, 6, 0, 0, 0]); // 8-bit RGBA
     out.add(_pngChunk('IHDR', ihdr.toBytes()));
 
-    // Raw image data: filter byte (0) + RGBA per pixel, per row
     final raw = BytesBuilder();
     for (var y = 0; y < height; y++) {
       raw.addByte(0); // filter: none
@@ -183,15 +204,8 @@ fn main() {
         raw.add([0x06, 0xb6, 0xd4, 0xFF]); // RGBA cyan
       }
     }
-    final rawBytes = raw.toBytes();
-
-    // Wrap in zlib (stored, no compression — simple and correct)
-    final idat = _zlibStore(rawBytes);
-    out.add(_pngChunk('IDAT', idat));
-
-    // IEND chunk
+    out.add(_pngChunk('IDAT', _zlibStore(raw.toBytes())));
     out.add(_pngChunk('IEND', Uint8List(0)));
-
     return out.toBytes();
   }
 
@@ -212,22 +226,18 @@ fn main() {
 
   static Uint8List _zlibStore(Uint8List data) {
     final out = BytesBuilder();
-    out.add([0x78, 0x01]); // zlib header (deflate, no dict)
-
+    out.add([0x78, 0x01]);
     var offset = 0;
     while (offset < data.length) {
       final remaining = data.length - offset;
       final blockSize = remaining > 65535 ? 65535 : remaining;
       final isLast = (offset + blockSize) >= data.length;
-
       out.addByte(isLast ? 0x01 : 0x00);
       out.add([blockSize & 0xFF, (blockSize >> 8) & 0xFF]);
       out.add([~blockSize & 0xFF, (~blockSize >> 8) & 0xFF]);
       out.add(data.sublist(offset, offset + blockSize));
       offset += blockSize;
     }
-
-    // Adler-32 checksum
     var a = 1, b = 0;
     for (final byte in data) {
       a = (a + byte) % 65521;

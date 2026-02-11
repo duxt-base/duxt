@@ -389,6 +389,7 @@ Middleware jsonBody() {
       return innerHandler(request.change(context: {
         ...request.context,
         'body': json,
+        'rawBody': body,
       }));
     };
   };
@@ -478,6 +479,9 @@ extension RequestExtensions on Request {
 
   /// Get parsed JSON body
   dynamic get body => context['body'];
+
+  /// Get raw body string (before JSON parsing)
+  String? get rawBody => context['rawBody'] as String?;
 
   /// Get query parameter
   String? query(String key) => url.queryParameters[key];

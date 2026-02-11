@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.5] - 2026-02-11
+
+- Add Tauri desktop support: `duxt build desktop`, `duxt create --desktop`, `duxt dev --desktop`
+- Bundled squircle icon asset for desktop apps (generates all icon sizes via `cargo tauri icon`)
+- Fixed client-mode template to use `runApp(App())` instead of `runApp(const ClientApp())` — fixes blank page in SPA mode
+- Changed `<script type="module">` to `<script defer>` in index.html template for DDC compatibility
+- Dev server: auto-retry on DevTools port conflict, wait for web assets before launching Tauri window
+
 ## [0.5.1] - 2026-02-10
 
 ### Changed
