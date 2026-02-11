@@ -78,6 +78,7 @@ pubspec.lock
 
 # Duxt
 .duxt/
+src-tauri/target/
 
 # IDE
 .idea/

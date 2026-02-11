@@ -49,16 +49,19 @@ Duxt v$version - A meta-framework for Jaspr
 
 Project:
   create <name>        Create a new Duxt project
+  create <name> --desktop  Create as desktop app (Tauri + SPA)
   update               Update Duxt CLI to latest version
   version              Show version
 
 Development:
   dev [--port]         Start dev server with hot reload (jaspr serve)
+  dev --desktop        Dev server in a native desktop window (Tauri)
   start [--port]       Start production server (serves built files)
   preview [--port]     Preview production build locally
 
 Build:
   build [--target]     Build for production deployment (jaspr build)
+  build desktop        Build as native desktop app (Tauri)
   generate             Generate static site (SSG only, no server)
 
 Generators:

@@ -51,6 +51,7 @@ class ClientTemplate {
     await _write(dir, 'lib/demo/pages/index.dart', _clientDemoTemplate);
 
     // Web
+    await _write(dir, 'web/index.html', indexHtmlTemplate(projectName));
     await _write(dir, 'web/styles.tw.css', tailwindTemplate);
     await _write(dir, 'web/main.client.dart', webMainClientTemplate(projectName));
   }
@@ -440,7 +441,6 @@ class _DemoPageState extends SignalState<DemoPage> {
               name: 'message',
               placeholder: 'Your message...',
               rows: 4,
-              value: _messageField(),
               onInput: (v) => _messageField.set(v),
               events: {'blur': (_) => _messageField.touch()},
               className: 'w-full px-3 py-2 bg-gray-800 border ${_messageField.touched && _messageField.hasError ? "border-red-500" : "border-gray-700"} rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500',

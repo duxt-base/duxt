@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import 'templates/static_template.dart';
 import 'templates/server_template.dart';
 import 'templates/client_template.dart';
+import 'tauri_scaffold.dart';
 
 /// Available project templates — each maps to a rendering mode
 enum ProjectTemplate {
@@ -67,6 +68,11 @@ class CreateCommand extends Command<int> {
       allowed: ProjectTemplate.values.map((t) => t.value).toList(),
       defaultsTo: null,
     );
+    argParser.addFlag(
+      'desktop',
+      help: 'Set up as desktop app (forces client template, scaffolds Tauri)',
+      defaultsTo: false,
+    );
   }
 
   @override
@@ -125,9 +131,14 @@ class CreateCommand extends Command<int> {
 
     // Template selection (template = mode, single choice)
     final templateArg = argResults!['template'] as String?;
+    final isDesktop = argResults!['desktop'] as bool;
     ProjectTemplate selectedTemplate;
 
-    if (templateArg != null) {
+    if (isDesktop) {
+      // Desktop mode forces client (SPA) template
+      selectedTemplate = ProjectTemplate.client;
+      print('  \x1B[36mDesktop mode:\x1B[0m using Client (SPA) template');
+    } else if (templateArg != null) {
       // Non-interactive mode with --template flag
       selectedTemplate = ProjectTemplate.fromValue(templateArg);
     } else {
@@ -170,13 +181,24 @@ class CreateCommand extends Command<int> {
           await ClientTemplate.generate(dartName, projectDir.path);
       }
 
+      // Scaffold Tauri desktop project if --desktop flag
+      if (isDesktop) {
+        print('');
+        print('\x1B[90m→\x1B[0m Scaffolding Tauri desktop project...');
+        await TauriScaffold.scaffold(projectDir.path, dartName);
+      }
+
       print('');
       print('\x1B[32m✓\x1B[0m Project created successfully!');
       print('');
       print('Next steps:');
       print('  cd $projectName');
       print('  dart pub get');
-      print('  duxt dev');
+      if (isDesktop) {
+        print('  duxt build desktop');
+      } else {
+        print('  duxt dev');
+      }
       print('');
 
       return 0;

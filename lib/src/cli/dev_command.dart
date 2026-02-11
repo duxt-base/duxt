@@ -10,6 +10,7 @@ import 'package:yaml/yaml.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../core/router_generator.dart';
 import '../core/watcher.dart';
+import 'tauri_scaffold.dart';
 
 /// Command to start development server
 /// Usage: duxt dev [--port=4000]
@@ -39,6 +40,11 @@ class DevCommand extends Command<int> {
       defaultsTo: false,
       help: 'Show detailed build output',
     );
+    argParser.addFlag(
+      'desktop',
+      defaultsTo: false,
+      help: 'Run in a native desktop window (Tauri dev mode)',
+    );
   }
 
   @override
@@ -49,6 +55,7 @@ class DevCommand extends Command<int> {
     final webdevPort = (port + 3).toString();
     final noApi = argResults!['no-api'] as bool;
     final verbose = argResults!['verbose'] as bool;
+    final desktop = argResults!['desktop'] as bool;
     final projectDir = Directory.current.path;
 
     // Check if this is a Duxt project
@@ -304,12 +311,19 @@ class DevCommand extends Command<int> {
     print('\x1B[90mPress Ctrl+C to stop\x1B[0m');
     print('');
 
+    // Launch Tauri dev window if --desktop
+    Process? tauriProcess;
+    if (desktop) {
+      tauriProcess = await _launchTauriDev(projectDir, port, verbose: verbose);
+    }
+
     // Keep running until interrupted
     await ProcessSignal.sigint.watch().first;
 
     print('');
     print('\x1B[90mShutting down...\x1B[0m');
 
+    tauriProcess?.kill();
     await devTools.stop();
     await proxyServer.close();
     await watcher.stop();
@@ -318,6 +332,60 @@ class DevCommand extends Command<int> {
     jasprProcess.kill();
 
     return 0;
+  }
+
+  /// Launch Tauri in dev mode, pointing at the jaspr dev server
+  Future<Process?> _launchTauriDev(String projectDir, int port, {bool verbose = false}) async {
+    // Scaffold src-tauri/ if missing
+    final tauriDir = Directory(p.join(projectDir, 'src-tauri'));
+    if (!tauriDir.existsSync()) {
+      print('\x1B[90m→\x1B[0m Scaffolding Tauri project...');
+      final pubspec = File(p.join(projectDir, 'pubspec.yaml'));
+      final content = await pubspec.readAsString();
+      final nameMatch = RegExp(r'^name:\s*(.+)$', multiLine: true).firstMatch(content);
+      final projectName = nameMatch?.group(1)?.trim() ?? 'duxt_app';
+      await TauriScaffold.scaffold(projectDir, projectName);
+    }
+
+    // Set devUrl in tauri.conf.json so Tauri points at the dev server
+    final confFile = File(p.join(projectDir, 'src-tauri', 'tauri.conf.json'));
+    final conf = jsonDecode(await confFile.readAsString()) as Map<String, dynamic>;
+    final build = (conf['build'] as Map<String, dynamic>?) ?? {};
+    build['devUrl'] = 'http://localhost:$port';
+    conf['build'] = build;
+    await confFile.writeAsString(jsonEncode(conf));
+
+    print('');
+    print('\x1B[90m→\x1B[0m Launching Tauri desktop window...');
+
+    final process = await Process.start(
+      'cargo',
+      ['tauri', 'dev'],
+      workingDirectory: projectDir,
+    );
+
+    process.stdout.listen((data) {
+      final output = utf8.decode(data).trim();
+      for (final line in output.split('\n')) {
+        if (line.trim().isNotEmpty) {
+          print('\x1B[36m[desktop]\x1B[0m $line');
+        }
+      }
+    });
+    process.stderr.listen((data) {
+      final output = utf8.decode(data).trim();
+      for (final line in output.split('\n')) {
+        if (line.trim().isEmpty) continue;
+        // Filter cargo compile progress noise
+        if (line.contains('Compiling') || line.contains('Downloading') || line.contains('Updating')) {
+          if (verbose) print('\x1B[90m[desktop]\x1B[0m $line');
+        } else {
+          print('\x1B[36m[desktop]\x1B[0m $line');
+        }
+      }
+    });
+
+    return process;
   }
 
   /// CORS middleware

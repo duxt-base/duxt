@@ -4,6 +4,7 @@ import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 import '../core/router_generator.dart';
 import '../core/builder.dart';
+import 'build_desktop_command.dart';
 
 /// Command to build for production
 /// Usage: duxt build [--target=linux-x64]
@@ -15,6 +16,8 @@ class BuildCommand extends Command<int> {
   final description = 'Build the project for production';
 
   BuildCommand() {
+    addSubcommand(BuildDesktopCommand());
+
     argParser.addOption(
       'output',
       abbr: 'o',
