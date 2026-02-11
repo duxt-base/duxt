@@ -11,6 +11,12 @@ import 'package:path/path.dart' as p;
 ///   duxt g component posts/card title:String
 ///   duxt g model posts title:String content:String
 ///   duxt g api posts
+///
+/// Namespace examples:
+///   duxt g module Admin/Post        → lib/admin/post/pages/
+///   duxt g page Admin/Post/edit     → lib/admin/post/pages/edit.dart
+///   duxt g layout Admin             → lib/admin/layouts/default.dart
+///   duxt g module Theme/Blog        → lib/theme/blog/pages/
 class GCommand extends Command<int> {
   @override
   final name = 'g';
@@ -80,7 +86,7 @@ class GCommand extends Command<int> {
     print('  component, c - Generate a component in a module');
     print('  model, m     - Generate a model in a module');
     print('  api, a       - Generate an API route in a module');
-    print('  layout, l    - Generate a layout in shared/layouts');
+    print('  layout, l    - Generate a layout (shared or namespace)');
     print('');
     print('Examples:');
     print('  duxt g module posts                     # Create posts module');
@@ -89,6 +95,13 @@ class GCommand extends Command<int> {
     print('  duxt g model posts title:String content:String');
     print('  duxt g api posts                        # Create server/api/posts.dart');
     print('  duxt g layout admin                     # Create shared/layouts/admin.dart');
+    print('');
+    print('Namespace examples (uppercase first letter = namespace):');
+    print('  duxt g module Admin/Post                # Create lib/admin/post/');
+    print('  duxt g page Admin/Post/edit             # Create lib/admin/post/pages/edit.dart');
+    print('  duxt g layout Admin                     # Create lib/admin/layouts/default.dart');
+    print('  duxt g module Theme/Blog                # Create lib/theme/blog/');
+    print('  duxt g module Theme/Home                # Create lib/theme/home/ (maps to /)');
   }
 
   List<FieldDef> _parseFields(List<String> args) {
@@ -128,13 +141,65 @@ class GCommand extends Command<int> {
     }
   }
 
-  // Parse module/name format
-  (String module, String name) _parseTarget(String target) {
-    if (target.contains('/')) {
-      final parts = target.split('/');
-      return (parts[0], parts.sublist(1).join('/'));
+  /// Parse target into namespace, module, and name.
+  ///
+  /// Convention: Uppercase first letter = namespace.
+  ///   'Admin/Post'      → namespace=admin, module=post, name=index
+  ///   'Admin/Post/edit' → namespace=admin, module=post, name=edit
+  ///   'posts'           → namespace='', module=posts, name=index
+  ///   'posts/_id_'      → namespace='', module=posts, name=_id_
+  ({String namespace, String module, String name}) _parseTarget(String target) {
+    final parts = target.split('/');
+
+    if (parts.length == 1) {
+      return (namespace: '', module: parts[0].toLowerCase(), name: 'index');
     }
-    return (target, 'index');
+
+    if (parts.length == 2) {
+      // Check if first part is a namespace (starts with uppercase)
+      if (_isNamespace(parts[0])) {
+        return (
+          namespace: parts[0].toLowerCase(),
+          module: parts[1].toLowerCase(),
+          name: 'index',
+        );
+      }
+      // Flat module/name
+      return (namespace: '', module: parts[0].toLowerCase(), name: parts[1]);
+    }
+
+    // 3+ parts: check if first part is namespace
+    if (_isNamespace(parts[0])) {
+      return (
+        namespace: parts[0].toLowerCase(),
+        module: parts[1].toLowerCase(),
+        name: parts.sublist(2).join('/'),
+      );
+    }
+
+    // No namespace, first part is module, rest is nested page name
+    return (
+      namespace: '',
+      module: parts[0].toLowerCase(),
+      name: parts.sublist(1).join('/'),
+    );
+  }
+
+  /// Check if a string starts with an uppercase letter (namespace convention).
+  bool _isNamespace(String s) => s.isNotEmpty && s[0] == s[0].toUpperCase() && s[0] != s[0].toLowerCase();
+
+  /// Get the base directory path for a module, respecting namespace.
+  String _modulePath(String projectDir, String namespace, String module) {
+    if (namespace.isEmpty) {
+      return p.join(projectDir, 'lib', module);
+    }
+    return p.join(projectDir, 'lib', namespace, module);
+  }
+
+  /// Get the display path (for print messages) like 'admin/post' or 'posts'.
+  String _displayPath(String namespace, String module) {
+    if (namespace.isEmpty) return module;
+    return '$namespace/$module';
   }
 
   Future<int> _generateModule(String projectDir, String moduleName, bool force) async {
@@ -143,9 +208,12 @@ class GCommand extends Command<int> {
       return 1;
     }
 
-    final moduleDir = p.join(projectDir, 'lib', moduleName);
+    final parsed = _parseTarget(moduleName);
+    final moduleDir = _modulePath(projectDir, parsed.namespace, parsed.module);
+    final display = _displayPath(parsed.namespace, parsed.module);
+
     if (Directory(moduleDir).existsSync() && !force) {
-      print('Error: Module "$moduleName" already exists. Use --force to overwrite.');
+      print('Error: Module "$display" already exists. Use --force to overwrite.');
       return 1;
     }
 
@@ -154,7 +222,7 @@ class GCommand extends Command<int> {
     await Directory(p.join(moduleDir, 'components')).create(recursive: true);
 
     // Create index page
-    final className = _toPascalCase(moduleName);
+    final className = _toPascalCase(parsed.module);
     final pageContent = '''
 import 'package:jaspr/jaspr.dart';
 import 'package:jaspr/dom.dart';
@@ -169,7 +237,7 @@ class ${className}Page extends StatelessComponent {
         text('$className'),
       ]),
       p(classes: 'text-gray-600', [
-        text('Welcome to the $moduleName module'),
+        text('Welcome to the ${parsed.module} module'),
       ]),
     ]);
   }
@@ -177,18 +245,29 @@ class ${className}Page extends StatelessComponent {
 ''';
     await File(p.join(moduleDir, 'pages', 'index.dart')).writeAsString(pageContent);
 
-    print('\x1B[32m✓\x1B[0m Generated module: $moduleName/');
+    // Build expected route path
+    String routePath;
+    if (parsed.namespace == 'theme') {
+      routePath = parsed.module == 'home' ? '/' : '/${parsed.module}';
+    } else if (parsed.namespace.isNotEmpty) {
+      routePath = '/${parsed.namespace}/${parsed.module}';
+    } else {
+      routePath = '/${parsed.module}';
+    }
+
+    print('\x1B[32m✓\x1B[0m Generated module: $display/');
     print('    pages/index.dart');
     print('    components/');
     print('');
-    print('Add route to lib/app.dart:');
-    print("  Route(path: '/$moduleName', builder: (_, __) => const ${className}Page()),");
+    print('Route: $routePath → ${className}Page');
     return 0;
   }
 
   Future<int> _generatePage(String projectDir, String target, List<FieldDef> fields, bool force) async {
-    final (module, name) = _parseTarget(target);
-    final filePath = p.join(projectDir, 'lib', module, 'pages', '$name.dart');
+    final parsed = _parseTarget(target);
+    final moduleDir = _modulePath(projectDir, parsed.namespace, parsed.module);
+    final display = _displayPath(parsed.namespace, parsed.module);
+    final filePath = p.join(moduleDir, 'pages', '${parsed.name}.dart');
     final file = File(filePath);
 
     if (file.existsSync() && !force) {
@@ -198,21 +277,24 @@ class ${className}Page extends StatelessComponent {
 
     await file.parent.create(recursive: true);
 
-    final className = _pathToClassName(name);
-    final isDynamic = name.contains('[');
-    final routeParams = _extractRouteParams(name);
+    final className = _pathToClassName(parsed.name);
+    final isDynamic = parsed.name.contains('[');
+    final routeParams = _extractRouteParams(parsed.name);
 
     final content = _buildPageContent(className, fields, routeParams, isDynamic);
     await file.writeAsString(content);
 
-    print('\x1B[32m✓\x1B[0m Generated page: lib/$module/pages/$name.dart');
-    _printRouteHint(module, name, className, routeParams);
+    print('\x1B[32m✓\x1B[0m Generated page: lib/$display/pages/${parsed.name}.dart');
+    _printRouteHint(parsed.namespace, parsed.module, parsed.name, className, routeParams);
     return 0;
   }
 
   Future<int> _generateComponent(String projectDir, String target, List<FieldDef> fields, bool force) async {
-    final (module, name) = _parseTarget(target);
-    final filePath = p.join(projectDir, 'lib', module, 'components', '$name.dart');
+    final parsed = _parseTarget(target);
+    final moduleDir = _modulePath(projectDir, parsed.namespace, parsed.module);
+    final display = _displayPath(parsed.namespace, parsed.module);
+    final name = parsed.name == 'index' ? parsed.module : parsed.name;
+    final filePath = p.join(moduleDir, 'components', '$name.dart');
     final file = File(filePath);
 
     if (file.existsSync() && !force) {
@@ -226,13 +308,15 @@ class ${className}Page extends StatelessComponent {
     final content = _buildComponentContent(className, fields);
     await file.writeAsString(content);
 
-    print('\x1B[32m✓\x1B[0m Generated component: lib/$module/components/$name.dart');
+    print('\x1B[32m✓\x1B[0m Generated component: lib/$display/components/$name.dart');
     return 0;
   }
 
   Future<int> _generateModel(String projectDir, String target, List<FieldDef> fields, bool force) async {
-    final (module, _) = _parseTarget(target);
-    final filePath = p.join(projectDir, 'lib', module, 'model.dart');
+    final parsed = _parseTarget(target);
+    final moduleDir = _modulePath(projectDir, parsed.namespace, parsed.module);
+    final display = _displayPath(parsed.namespace, parsed.module);
+    final filePath = p.join(moduleDir, 'model.dart');
     final file = File(filePath);
 
     if (file.existsSync() && !force) {
@@ -242,18 +326,19 @@ class ${className}Page extends StatelessComponent {
 
     await file.parent.create(recursive: true);
 
-    final className = _toPascalCase(module);
+    final className = _toPascalCase(parsed.module);
     final content = _buildModelContent(className, fields);
     await file.writeAsString(content);
 
-    print('\x1B[32m✓\x1B[0m Generated model: lib/$module/model.dart');
+    print('\x1B[32m✓\x1B[0m Generated model: lib/$display/model.dart');
     return 0;
   }
 
   Future<int> _generateApi(String projectDir, String target, List<FieldDef> fields, bool force) async {
-    final (module, name) = _parseTarget(target);
-    final apiName = name == 'index' ? module : name;
-    final filePath = p.join(projectDir, 'lib', module, 'api.dart');
+    final parsed = _parseTarget(target);
+    final moduleDir = _modulePath(projectDir, parsed.namespace, parsed.module);
+    final display = _displayPath(parsed.namespace, parsed.module);
+    final filePath = p.join(moduleDir, 'api.dart');
     final file = File(filePath);
 
     if (file.existsSync() && !force) {
@@ -263,16 +348,24 @@ class ${className}Page extends StatelessComponent {
 
     await file.parent.create(recursive: true);
 
-    final className = _toPascalCase(module);
-    final content = _buildApiContent(className, module, fields);
+    final className = _toPascalCase(parsed.module);
+    // API path includes namespace prefix
+    final apiPath = parsed.namespace.isEmpty ? parsed.module : '${parsed.namespace}/${parsed.module}';
+    final content = _buildApiContent(className, apiPath, fields);
     await file.writeAsString(content);
 
-    print('\x1B[32m✓\x1B[0m Generated API: lib/$module/api.dart');
-    print('  Endpoint: /api/$apiName');
+    print('\x1B[32m✓\x1B[0m Generated API: lib/$display/api.dart');
+    print('  Endpoint: /api/$apiPath');
     return 0;
   }
 
   Future<int> _generateLayout(String projectDir, String name, bool force) async {
+    // Check if name looks like a namespace (uppercase first letter)
+    if (_isNamespace(name)) {
+      return _generateNamespaceLayout(projectDir, name.toLowerCase(), force);
+    }
+
+    // Standard shared layout
     final filePath = p.join(projectDir, 'lib', 'shared', 'layouts', '$name.dart');
     final file = File(filePath);
 
@@ -313,6 +406,60 @@ class $className extends StatelessComponent {
     await file.writeAsString(content);
 
     print('\x1B[32m✓\x1B[0m Generated layout: lib/shared/layouts/$name.dart');
+    return 0;
+  }
+
+  /// Generate a namespace layout (e.g. lib/admin/layouts/default.dart).
+  /// This layout auto-wraps all routes in the namespace.
+  Future<int> _generateNamespaceLayout(String projectDir, String namespace, bool force) async {
+    final filePath = p.join(projectDir, 'lib', namespace, 'layouts', 'default.dart');
+    final file = File(filePath);
+
+    if (file.existsSync() && !force) {
+      print('Error: Namespace layout already exists. Use --force to overwrite.');
+      return 1;
+    }
+
+    await file.parent.create(recursive: true);
+
+    final className = '${_toPascalCase(namespace)}Layout';
+    final content = '''
+import 'package:jaspr/jaspr.dart';
+import 'package:jaspr/dom.dart';
+
+/// Layout for the $namespace namespace.
+/// All routes under /$namespace/* are automatically wrapped with this layout.
+class $className extends StatelessComponent {
+  final Component child;
+
+  const $className({super.key, required this.child});
+
+  @override
+  Component build(BuildContext context) {
+    return div(classes: 'min-h-screen', [
+      // ${_toPascalCase(namespace)} Header
+      header(classes: 'bg-gray-900 border-b border-gray-700', [
+        div(classes: 'max-w-7xl mx-auto px-4 py-3 flex items-center justify-between', [
+          a(href: '/$namespace', classes: 'text-white font-semibold text-lg', [
+            text('${_toPascalCase(namespace)}'),
+          ]),
+          nav(classes: 'flex gap-4', [
+            // Add navigation links here
+          ]),
+        ]),
+      ]),
+      // Content
+      main_(classes: 'max-w-7xl mx-auto px-4 py-8', [
+        child,
+      ]),
+    ]);
+  }
+}
+''';
+    await file.writeAsString(content);
+
+    print('\x1B[32m✓\x1B[0m Generated namespace layout: lib/$namespace/layouts/default.dart');
+    print('  All /$namespace/* routes will be wrapped with ${className}.');
     return 0;
   }
 
@@ -471,35 +618,35 @@ $toJsonFields
 ''';
   }
 
-  String _buildApiContent(String className, String module, List<FieldDef> fields) {
+  String _buildApiContent(String className, String apiPath, List<FieldDef> fields) {
     return '''
 import 'package:duxt/duxt.dart';
 import 'model.dart';
 
-/// API calls for $module module
+/// API calls for $apiPath
 class ${className}Api {
   static Future<List<$className>> getAll() async {
-    final data = await Api.get('/$module');
+    final data = await Api.get('/$apiPath');
     return $className.fromList(data as List);
   }
 
   static Future<$className> getOne(String id) async {
-    final data = await Api.get('/$module/\$id');
+    final data = await Api.get('/$apiPath/\$id');
     return $className.fromJson(data as Map<String, dynamic>);
   }
 
   static Future<$className> create($className item) async {
-    final data = await Api.post('/$module', body: item.toJson());
+    final data = await Api.post('/$apiPath', body: item.toJson());
     return $className.fromJson(data as Map<String, dynamic>);
   }
 
   static Future<$className> update(String id, $className item) async {
-    final data = await Api.put('/$module/\$id', body: item.toJson());
+    final data = await Api.put('/$apiPath/\$id', body: item.toJson());
     return $className.fromJson(data as Map<String, dynamic>);
   }
 
   static Future<void> delete(String id) async {
-    await Api.delete('/$module/\$id');
+    await Api.delete('/$apiPath/\$id');
   }
 }
 ''';
@@ -537,24 +684,29 @@ class ${className}Api {
     return params;
   }
 
-  void _printRouteHint(String module, String name, String className, List<String> routeParams) {
+  void _printRouteHint(String namespace, String module, String name, String className, List<String> routeParams) {
     print('');
-    print('Add route to lib/app.dart:');
-    final routePath = '/$module${name == 'index' ? '' : '/$name'}'
+
+    // Build route path
+    String routePrefix;
+    if (namespace == 'theme') {
+      routePrefix = module == 'home' ? '' : '/$module';
+    } else if (namespace.isNotEmpty) {
+      routePrefix = '/$namespace/$module';
+    } else {
+      routePrefix = '/$module';
+    }
+
+    final routePath = '$routePrefix${name == 'index' ? '' : '/$name'}'
         .replaceAllMapped(RegExp(r'\[\.\.\.(\w+)\]'), (m) => '*')
         .replaceAllMapped(RegExp(r'\[(\w+)\]'), (m) => ':${m.group(1)}');
-    print('  Route(');
-    print("    path: '$routePath',");
+
+    final effectivePath = routePath.isEmpty ? '/' : routePath;
+
+    print('Route: $effectivePath → $className');
     if (routeParams.isNotEmpty) {
-      print('    builder: (context, state) => $className(');
-      for (final param in routeParams) {
-        print("      $param: state.params['$param']!,");
-      }
-      print('    ),');
-    } else {
-      print('    builder: (context, state) => const $className(),');
+      print('  Params: ${routeParams.join(', ')}');
     }
-    print('  ),');
   }
 }
 

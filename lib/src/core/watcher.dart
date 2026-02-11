@@ -14,10 +14,24 @@ class DuxtWatcher {
   DuxtWatcher(this.projectDir, {required this.onFileChange});
 
   Future<void> start() async {
-    // Watch directories that trigger rebuilds
-    final watchDirs = ['pages', 'layouts', 'components', 'middleware', 'composables'];
+    // Watch lib/ recursively to catch pages in namespaces (e.g. lib/admin/posts/pages/)
+    final libDir = p.join(projectDir, 'lib');
+    if (Directory(libDir).existsSync()) {
+      final watcher = DirectoryWatcher(libDir);
+      _watchers.add(watcher);
 
-    for (final dir in watchDirs) {
+      final subscription = watcher.events.listen((event) {
+        if (event.path.endsWith('.dart') || event.path.endsWith('.md') || event.path.endsWith('.mdx')) {
+          _debounce(() => onFileChange(event.path));
+        }
+      });
+
+      _subscriptions.add(subscription);
+    }
+
+    // Also watch top-level directories that may exist outside lib/
+    final extraDirs = ['server', 'middleware', 'composables'];
+    for (final dir in extraDirs) {
       final fullPath = p.join(projectDir, dir);
       if (Directory(fullPath).existsSync()) {
         final watcher = DirectoryWatcher(fullPath);

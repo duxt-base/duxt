@@ -6,9 +6,10 @@ import 'package:path/path.dart' as p;
 /// Usage: duxt scaffold <name> [field:type ...]
 ///
 /// Example: duxt scaffold posts title:String content:String author:String
+/// Example: duxt scaffold Admin/Post title:String body:String (namespace)
 ///
 /// Generates:
-/// lib/posts/
+/// lib/posts/              (or lib/admin/post/ with namespace)
 ///   pages/
 ///     index.dart     (list page)
 ///     _id_.dart      (detail page)
@@ -43,23 +44,34 @@ class ScaffoldCommand extends Command<int> {
       print('Error: Please specify a module name');
       print('Usage: duxt scaffold <name> [field:type ...]');
       print('');
-      print('Example:');
+      print('Examples:');
       print('  duxt scaffold posts title:String content:String');
+      print('  duxt scaffold Admin/Post title:String body:String');
       return 1;
     }
 
-    final rawName = argResults!.rest[0].toLowerCase();
+    final rawInput = argResults!.rest[0];
 
-    // Validate module name: only lowercase letters, numbers, underscores
-    final validNameRegex = RegExp(r'^[a-z][a-z0-9_]*$');
-    if (!validNameRegex.hasMatch(rawName)) {
-      print('Error: "$rawName" is not a valid module name.');
-      print('Module names must start with a lowercase letter and contain only');
-      print('lowercase letters, numbers, and underscores.');
+    // Validate module name: letters, numbers, underscores, and / for namespaces
+    final validNameRegex = RegExp(r'^[a-zA-Z][a-zA-Z0-9_]*(/[a-zA-Z][a-zA-Z0-9_]*)*$');
+    if (!validNameRegex.hasMatch(rawInput)) {
+      print('Error: "$rawInput" is not a valid module name.');
+      print('Module names must start with a letter and contain only');
+      print('letters, numbers, underscores. Use / for namespaces (e.g. Admin/Post).');
       return 1;
     }
 
-    final moduleName = rawName;
+    // Parse namespace from input (e.g. Admin/Post → namespace=admin, moduleName=post)
+    String namespace = '';
+    String moduleName;
+    if (rawInput.contains('/')) {
+      final parts = rawInput.split('/');
+      namespace = parts[0].toLowerCase();
+      moduleName = parts.sublist(1).join('_').toLowerCase();
+    } else {
+      moduleName = rawInput.toLowerCase();
+    }
+
     final fields = _parseFields(argResults!.rest.skip(1).toList());
     final force = argResults!['force'] as bool;
     final apiOnly = argResults!['api-only'] as bool;
@@ -80,8 +92,14 @@ class ScaffoldCommand extends Command<int> {
     final belongsToFields = fields.where((f) => f.isBelongsTo).toList();
     final toManyFields = fields.where((f) => f.isToMany).toList();
 
+    // Display path for user messages
+    final displayName = namespace.isEmpty ? moduleName : '$namespace/$moduleName';
+
+    // API path includes namespace prefix (e.g. /api/admin/posts)
+    final apiPath = namespace.isEmpty ? moduleName : '$namespace/$moduleName';
+
     print('');
-    print('\x1B[36mScaffolding $moduleName module...\x1B[0m');
+    print('\x1B[36mScaffolding $displayName module...\x1B[0m');
     print('');
 
     // Auto-add duxt_orm and sqlite3 dependencies if using ORM
@@ -97,12 +115,14 @@ class ScaffoldCommand extends Command<int> {
     final singularClass = _toPascalCase(singular);
 
     try {
-      // Create module directories
-      final moduleDir = p.join(projectDir, 'lib', moduleName);
+      // Create module directories (namespace-aware)
+      final moduleDir = namespace.isEmpty
+          ? p.join(projectDir, 'lib', moduleName)
+          : p.join(projectDir, 'lib', namespace, moduleName);
 
       // Check if module exists
       if (Directory(moduleDir).existsSync() && !force) {
-        print('\x1B[31m✗\x1B[0m Module "$moduleName" already exists. Use --force to overwrite.');
+        print('\x1B[31m✗\x1B[0m Module "$displayName" already exists. Use --force to overwrite.');
         return 1;
       }
 
@@ -135,24 +155,30 @@ class ScaffoldCommand extends Command<int> {
         if (generateApi) {
           final routesDir = p.join(projectDir, 'server', 'api');
           await Directory(routesDir).create(recursive: true);
-          await _generateOrmRoutes(routesDir, singularClass, moduleName, singular, fields, packageName);
-          print('  \x1B[32m✓\x1B[0m server/api/$moduleName.dart (routes)');
+          // Use apiPath for namespace-aware API endpoints
+          await _generateOrmRoutes(routesDir, singularClass, apiPath, singular, fields, packageName);
+          // Store route file using underscore-separated name for namespaced modules
+          final routeFileName = apiPath.replaceAll('/', '_');
+          print('  \x1B[32m✓\x1B[0m server/api/$routeFileName.dart (routes)');
         } else {
           print('  \x1B[90m-\x1B[0m API routes skipped (--no-api)');
         }
       }
 
+      // Route path for href links (includes namespace)
+      final routePath = apiPath; // e.g. 'admin/post' or 'post'
+
       if (!apiOnly) {
         // 3. Generate List Page (with Create modal)
-        await _generateListPage(moduleDir, moduleName, singularClass, fields, packageName, useOrm);
+        await _generateListPage(moduleDir, routePath, singularClass, fields, packageName, useOrm);
         print('  \x1B[32m✓\x1B[0m pages/index.dart (with create modal)');
 
         // 4. Generate Detail Page (with Edit modal)
-        await _generateDetailPage(moduleDir, moduleName, singularClass, fields, packageName, useOrm);
+        await _generateDetailPage(moduleDir, routePath, singularClass, fields, packageName, useOrm);
         print('  \x1B[32m✓\x1B[0m pages/_id_.dart (with edit modal)');
 
         // 5. Generate Card Component
-        await _generateCard(moduleDir, singular, singularClass, fields, packageName, useOrm);
+        await _generateCard(moduleDir, singular, singularClass, fields, packageName, useOrm, routePath);
         print('  \x1B[32m✓\x1B[0m components/${singular}_card.dart');
 
         // 6. Generate Form Component
@@ -160,15 +186,15 @@ class ScaffoldCommand extends Command<int> {
         print('  \x1B[32m✓\x1B[0m components/${singular}_form.dart');
       }
 
-      // 8. Try to add nav link
-      await _addNavLink(projectDir, moduleName, className);
+      // 8. Try to add nav link (use full route path)
+      await _addNavLink(projectDir, routePath, className);
 
       // 9. Auto-register model in server/db.dart and lib/main.server.dart
       if (useOrm) {
         await _addModelToDbDart(projectDir, singular, singularClass, packageName);
         await _addModelToMainServer(projectDir, singular, singularClass, packageName);
         if (generateApi) {
-          await _addApiRouteToServer(projectDir, moduleName, singularClass);
+          await _addApiRouteToServer(projectDir, apiPath, singularClass);
         }
       }
 
@@ -179,11 +205,11 @@ class ScaffoldCommand extends Command<int> {
       print('');
       print('  // $className module');
       print('  Route(');
-      print("    path: '/$moduleName',");
+      print("    path: '/$routePath',");
       print('    builder: (_, __) => const ${className}ListPage(),');
       print('  ),');
       print('  Route(');
-      print("    path: '/$moduleName/:id',");
+      print("    path: '/$routePath/:id',");
       print("    builder: (_, state) => ${className}DetailPage(id: state.params['id']!),");
       print('  ),');
 
@@ -863,7 +889,7 @@ $dataFields${relationDataFields.isNotEmpty ? ',\n$relationDataFields' : ''}
     await File(p.join(moduleDir, 'pages', '_id_.dart')).writeAsString(content);
   }
 
-  Future<void> _generateCard(String moduleDir, String singular, String className, List<FieldDef> fields, String packageName, bool useOrm) async {
+  Future<void> _generateCard(String moduleDir, String singular, String className, List<FieldDef> fields, String packageName, bool useOrm, [String? routePath]) async {
     final displayField = fields.where((f) => !f.isRelation).isNotEmpty
         ? fields.where((f) => !f.isRelation).first.name
         : 'id';
@@ -871,6 +897,8 @@ $dataFields${relationDataFields.isNotEmpty ? ',\n$relationDataFields' : ''}
     final modelImport = useOrm
         ? "import 'package:$packageName/models/$singular.dart';"
         : "import '../model.dart';";
+
+    final cardRoutePath = routePath ?? _pluralize(singular);
 
     final content = '''
 import 'package:jaspr/jaspr.dart';
@@ -885,7 +913,7 @@ class ${className}Card extends StatelessComponent {
   @override
   Component build(BuildContext context) {
     return a(
-      href: '/${_pluralize(singular)}/\${item.id}',
+      href: '/$cardRoutePath/\${item.id}',
       classes: 'block p-6 bg-gray-800/50 rounded-lg border border-gray-700 hover:border-cyan-500/50 transition-colors',
       [
         h3(classes: 'text-lg font-semibold text-white', [
@@ -1421,7 +1449,9 @@ $allUpdateLines
   });
 }
 ''';
-    await File(p.join(routesDir, '$moduleName.dart')).writeAsString(content);
+    // Use underscore-separated file name for namespaced modules (e.g. admin_post.dart)
+    final routeFileName = moduleName.replaceAll('/', '_');
+    await File(p.join(routesDir, '$routeFileName.dart')).writeAsString(content);
   }
 
   String _dartTypeToColumn(String dartType, {String? originalType}) {
@@ -1785,8 +1815,9 @@ void main() async {
     // Check if already registered
     if (content.contains("register${className}Routes(")) return;
 
-    // Add import
-    final importLine = "import 'api/$moduleName.dart';";
+    // Add import (use underscore-separated file name for namespaced modules)
+    final routeFileName = moduleName.replaceAll('/', '_');
+    final importLine = "import 'api/$routeFileName.dart';";
     if (!content.contains(importLine)) {
       final importPattern = RegExp(r"(import 'api/[^']+';)\n(?!import 'api/)");
       if (importPattern.hasMatch(content)) {

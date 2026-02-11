@@ -7,17 +7,21 @@ import '../core/builder.dart';
 import 'build_desktop_command.dart';
 
 /// Command to build for production
-/// Usage: duxt build [--target=linux-x64]
+/// Usage: duxt build [desktop] [--target=linux-x64]
+///
+/// Default (no args): builds for web
+/// duxt build desktop: builds native desktop app via Tauri
 class BuildCommand extends Command<int> {
   @override
   final name = 'build';
 
   @override
-  final description = 'Build the project for production';
+  final description = 'Build for production (web by default, or "desktop" for Tauri)';
+
+  @override
+  String get invocation => 'duxt build [desktop] [options]';
 
   BuildCommand() {
-    addSubcommand(BuildDesktopCommand());
-
     argParser.addOption(
       'output',
       abbr: 'o',
@@ -34,6 +38,11 @@ class BuildCommand extends Command<int> {
       help: 'Build for all supported targets (requires Docker for cross-compilation)',
       defaultsTo: false,
     );
+    argParser.addFlag(
+      'debug',
+      help: 'Build in debug mode (desktop only)',
+      defaultsTo: false,
+    );
   }
 
   String get _currentTarget {
@@ -44,6 +53,27 @@ class BuildCommand extends Command<int> {
 
   @override
   Future<int> run() async {
+    // Check for platform target: duxt build desktop
+    final rest = argResults!.rest;
+    if (rest.isNotEmpty) {
+      switch (rest[0]) {
+        case 'desktop':
+          final debug = argResults!['debug'] as bool;
+          return BuildDesktopCommand.buildDesktop(debug: debug);
+        default:
+          print('Unknown build target: ${rest[0]}');
+          print('Available: desktop');
+          print('');
+          print('Run "duxt build" for web (default)');
+          return 1;
+      }
+    }
+
+    // Default: web build
+    return _buildWeb();
+  }
+
+  Future<int> _buildWeb() async {
     final projectDir = Directory.current.path;
     final outputDir = argResults!['output'] as String;
     final target = argResults!['target'] as String? ?? _currentTarget;

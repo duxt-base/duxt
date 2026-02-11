@@ -23,10 +23,20 @@ class BuildDesktopCommand extends Command<int> {
     );
   }
 
+  /// Static entry point callable from BuildCommand without argResults.
+  static Future<int> buildDesktop({bool debug = false}) async {
+    final cmd = BuildDesktopCommand();
+    return cmd._runDesktopBuild(debug: debug);
+  }
+
   @override
   Future<int> run() async {
-    final projectDir = Directory.current.path;
     final debug = argResults!['debug'] as bool;
+    return _runDesktopBuild(debug: debug);
+  }
+
+  Future<int> _runDesktopBuild({bool debug = false}) async {
+    final projectDir = Directory.current.path;
 
     print('');
     print('\x1B[36m╭─────────────────────────────────────╮\x1B[0m');

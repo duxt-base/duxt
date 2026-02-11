@@ -69,6 +69,14 @@ Generators:
   scaffold <name>      Generate full module with CRUD
   d <type> <name>      Delete module, page, component, model, or api
 
+Namespace examples:
+  g module Admin/Post              Create lib/admin/post/ (routes to /admin/post)
+  g page Admin/Post/edit           Create lib/admin/post/pages/edit.dart
+  g layout Admin                   Create lib/admin/layouts/default.dart
+  scaffold Admin/Post title:String Full CRUD in lib/admin/post/
+  g module Theme/Home              Create lib/theme/home/ (routes to /)
+  g module Theme/Blog              Create lib/theme/blog/ (routes to /blog)
+
 Documentation:
   docs generate        Generate API docs from code
   docs page <name>     Create a documentation page

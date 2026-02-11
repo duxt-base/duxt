@@ -14,7 +14,8 @@ import 'tauri_scaffold.dart';
 
 /// Command to start development server
 /// Usage: duxt dev [--port=4000]
-/// Ports are auto-incremented: proxy=port, api=port+1, jaspr=port+2, webdev=port+3
+/// Ports are auto-incremented: proxy=port, api=port+1, jaspr=port+2, webdev=port+3, jaspr-proxy=port+4
+/// Run multiple apps: duxt dev --port=4000 and duxt dev --port=5000
 class DevCommand extends Command<int> {
   @override
   final name = 'dev';
@@ -27,7 +28,7 @@ class DevCommand extends Command<int> {
       'port',
       abbr: 'p',
       defaultsTo: '4000',
-      help: 'Base port (api=+1, jaspr=+2, webdev=+3)',
+      help: 'Base port (api=+1, jaspr=+2, webdev=+3, jaspr-proxy=+4). Use different ports to run multiple apps.',
     );
     argParser.addFlag(
       'no-api',
@@ -53,6 +54,7 @@ class DevCommand extends Command<int> {
     final apiPort = port + 1;
     final jasprPort = port + 2;
     final webdevPort = (port + 3).toString();
+    final jasprProxyPort = (port + 4).toString();
     final noApi = argResults!['no-api'] as bool;
     final verbose = argResults!['verbose'] as bool;
     final desktop = argResults!['desktop'] as bool;
@@ -126,30 +128,7 @@ class DevCommand extends Command<int> {
     Process? jasprProcess;
     Process? tailwindProcess;
     HttpServer? proxyServer;
-    final devToolsPort = port + 4; // WebSocket port for dev tools
-    final devTools = _DevTools(devToolsPort);
-
-    // Start dev tools WebSocket server (non-fatal if port is busy)
-    try {
-      await devTools.start();
-    } catch (e) {
-      // Kill stale process on the port and retry once
-      try {
-        final result = await Process.run('lsof', ['-ti', ':$devToolsPort']);
-        final pids = result.stdout.toString().trim();
-        if (pids.isNotEmpty) {
-          for (final pid in pids.split('\n')) {
-            if (pid.trim().isNotEmpty) {
-              await Process.run('kill', ['-9', pid.trim()]);
-            }
-          }
-          await Future.delayed(const Duration(milliseconds: 500));
-          await devTools.start();
-        }
-      } catch (_) {
-        print('  \x1B[33m!\x1B[0m DevTools overlay unavailable (port $devToolsPort in use)');
-      }
-    }
+    final devTools = _DevTools();
 
     final hasApi = !noApi && File('$projectDir/server/main.dart').existsSync();
 
@@ -211,7 +190,7 @@ class DevCommand extends Command<int> {
       // Use local jaspr via dart run
       print('  \x1B[90mUsing local jaspr\x1B[0m');
       jasprCmd = 'dart';
-      jasprArgs = ['run', localJasprBin, 'serve', '--port', jasprPort.toString(), '--web-port', webdevPort];
+      jasprArgs = ['run', localJasprBin, 'serve', '--port', jasprPort.toString(), '--web-port', webdevPort, '--proxy-port', jasprProxyPort];
     } else {
       // Use global jaspr
       if (!File(globalJasprPath).existsSync()) {
@@ -219,7 +198,7 @@ class DevCommand extends Command<int> {
         await Process.run('dart', ['pub', 'global', 'activate', 'jaspr_cli']);
       }
       jasprCmd = globalJasprPath;
-      jasprArgs = ['serve', '--port', jasprPort.toString(), '--web-port', webdevPort];
+      jasprArgs = ['serve', '--port', jasprPort.toString(), '--web-port', webdevPort, '--proxy-port', jasprProxyPort];
     }
 
     jasprProcess = await Process.start(
@@ -298,10 +277,19 @@ class DevCommand extends Command<int> {
     }
     devTools.broadcast('success', 'Ready!', details: 'Development server started');
 
-    // Start proxy server on main port
+    // Start proxy server on main port (also serves DevTools WebSocket at /_duxt/ws)
+    final wsHandler = webSocketHandler((WebSocketChannel webSocket, String? subprotocol) {
+      devTools.addClient(webSocket);
+    });
+
     final handler = const shelf.Pipeline()
         .addMiddleware(_corsMiddleware())
-        .addHandler((request) => _proxyHandler(request, apiPort, jasprPort, hasApi, devToolsPort));
+        .addHandler((request) {
+          if (request.url.path == '_duxt/ws') {
+            return wsHandler(request);
+          }
+          return _proxyHandler(request, apiPort, jasprPort, hasApi, port);
+        });
 
     proxyServer = await shelf_io.serve(handler, 'localhost', port);
 
@@ -325,7 +313,6 @@ class DevCommand extends Command<int> {
     }
     print('  \x1B[90mJaspr:\x1B[0m    $jasprPort');
     print('  \x1B[90mWebdev:\x1B[0m   $webdevPort');
-    print('  \x1B[90mDevTools:\x1B[0m $devToolsPort');
     print('');
     print('\x1B[90mPress Ctrl+C to stop\x1B[0m');
     print('');
@@ -343,8 +330,8 @@ class DevCommand extends Command<int> {
     print('\x1B[90mShutting down...\x1B[0m');
 
     tauriProcess?.kill();
-    await devTools.stop();
     await proxyServer.close();
+    devTools.close();
     await watcher.stop();
     tailwindProcess?.kill();
     apiProcess?.kill();
@@ -448,7 +435,7 @@ class DevCommand extends Command<int> {
     int apiPort,
     int jasprPort,
     bool hasApi,
-    int devToolsPort,
+    int proxyPort,
   ) async {
     final path = request.url.path;
     final isApi = hasApi && path.startsWith('api/');
@@ -496,7 +483,7 @@ class DevCommand extends Command<int> {
       final contentType = headers['content-type'] ?? '';
       if (contentType.contains('text/html')) {
         var html = utf8.decode(responseBytes);
-        final script = _DevTools.overlayScript.replaceAll('__DEVTOOLS_PORT__', devToolsPort.toString());
+        final script = _DevTools.overlayScript.replaceAll('__PROXY_PORT__', proxyPort.toString());
         // Inject before </body>
         if (html.contains('</body>')) {
           html = html.replaceFirst('</body>', '$script</body>');
@@ -538,14 +525,14 @@ class DevCommand extends Command<int> {
 
       // For HTML document requests, return a nice loading page
       return shelf.Response.ok(
-        _loadingPageHtml(devToolsPort),
+        _loadingPageHtml(proxyPort),
         headers: {'Content-Type': 'text/html'},
       );
     }
   }
 
   /// Loading page HTML shown while Jaspr is building
-  String _loadingPageHtml(int devToolsPort) {
+  String _loadingPageHtml(int proxyPort) {
     return '''
 <!DOCTYPE html>
 <html lang="en">
@@ -617,11 +604,10 @@ class DevCommand extends Command<int> {
   </div>
   <script>
     const statusEl = document.getElementById('status-text');
-    const wsPort = $devToolsPort;
     let connected = false;
 
     function tryConnect() {
-      const ws = new WebSocket('ws://localhost:' + wsPort);
+      const ws = new WebSocket('ws://localhost:$proxyPort/_duxt/ws');
       ws.onopen = () => {
         connected = true;
         statusEl.textContent = 'Connected - waiting for build...';
@@ -885,45 +871,37 @@ class _Spinner {
   }
 }
 
-/// Dev tools overlay for showing build status toasts
+/// Dev tools overlay for showing build status toasts.
+/// Runs on the same port as the proxy server at /_duxt/ws.
 class _DevTools {
-  final int port;
   final List<WebSocketChannel> _clients = [];
-  HttpServer? _server;
-  String? _lastState; // Track last state to send to new clients
+  String? _lastState;
 
-  _DevTools(this.port);
+  /// Add a new WebSocket client (called by the proxy handler).
+  void addClient(WebSocketChannel webSocket) {
+    _clients.add(webSocket);
 
-  /// Start the WebSocket server
-  Future<void> start() async {
-    final handler = webSocketHandler((WebSocketChannel webSocket, String? subprotocol) {
-      _clients.add(webSocket);
+    webSocket.sink.add(jsonEncode({
+      'type': 'connected',
+      'message': 'Duxt DevTools connected',
+    }));
 
-      // Send welcome message
-      webSocket.sink.add(jsonEncode({
-        'type': 'connected',
-        'message': 'Duxt DevTools connected',
-      }));
+    // Send current state to new client (fixes race condition where
+    // client connects after build completed)
+    if (_lastState != null) {
+      try {
+        webSocket.sink.add(_lastState!);
+      } catch (_) {}
+    }
 
-      // Send current state to new client (fixes race condition where
-      // client connects after build completed)
-      if (_lastState != null) {
-        try {
-          webSocket.sink.add(_lastState!);
-        } catch (_) {}
-      }
-
-      webSocket.stream.listen(
-        (_) {},
-        onDone: () => _clients.remove(webSocket),
-        onError: (_) => _clients.remove(webSocket),
-      );
-    });
-
-    _server = await shelf_io.serve(handler, 'localhost', port);
+    webSocket.stream.listen(
+      (_) {},
+      onDone: () => _clients.remove(webSocket),
+      onError: (_) => _clients.remove(webSocket),
+    );
   }
 
-  /// Broadcast a message to all connected clients
+  /// Broadcast a message to all connected clients.
   void broadcast(String type, String message, {String? details}) {
     final payload = jsonEncode({
       'type': type,
@@ -932,7 +910,6 @@ class _DevTools {
       'timestamp': DateTime.now().millisecondsSinceEpoch,
     });
 
-    // Store state for new clients (only track success/building states)
     if (type == 'success' || type == 'building') {
       _lastState = payload;
     }
@@ -946,20 +923,21 @@ class _DevTools {
     }
   }
 
-  /// Stop the WebSocket server
-  Future<void> stop() async {
+  /// Close all connected clients.
+  void close() {
     for (final client in _clients) {
-      await client.sink.close();
+      try {
+        client.sink.close();
+      } catch (_) {}
     }
     _clients.clear();
-    await _server?.close();
   }
 
   /// JavaScript to inject into HTML for dev overlay (uses inline styles for reliability)
   static String get overlayScript => r'''
 <script>
 (function() {
-  const DEVTOOLS_WS_PORT = '__DEVTOOLS_PORT__';
+  const PROXY_PORT = '__PROXY_PORT__';
 
   // All styles inline to avoid Tailwind compilation issues
   const styles = `
@@ -1054,7 +1032,7 @@ class _DevTools {
   let reconnectAttempts = 0;
 
   function connect() {
-    ws = new WebSocket('ws://localhost:' + DEVTOOLS_WS_PORT);
+    ws = new WebSocket('ws://localhost:' + PROXY_PORT + '/_duxt/ws');
     ws.onopen = () => { reconnectAttempts = 0; console.log('[Duxt DevTools] Connected'); };
     ws.onmessage = (e) => { try { handleMessage(JSON.parse(e.data)); } catch(err) {} };
     ws.onclose = () => { if (reconnectAttempts < 5) { reconnectAttempts++; setTimeout(connect, 1000 * reconnectAttempts); } };

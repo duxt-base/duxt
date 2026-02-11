@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.6] - 2026-02-11
+
+### Added
+- **Namespace support** — `duxt g module Admin/Post` creates `lib/admin/post/pages/` routing to `/admin/posts`. Namespace layouts auto-wrap all routes in a namespace.
+- **Theme namespace** — `lib/theme/` strips prefix from routes: `theme/home` → `/`, `theme/blog` → `/blog`
+- **Namespace scaffolding** — `duxt scaffold Admin/Post title:String` generates full CRUD inside a namespace
+- **Namespace layout generator** — `duxt g layout Admin` creates `lib/admin/layouts/default.dart`
+- **Database configuration docs** — `duxt.config.dart` templates now include documented database config with commented-out examples for MySQL/PostgreSQL on client/static templates
+
+### Changed
+- **Dev server: run multiple apps** — each `duxt dev --port=N` gets unique ports for all services including jaspr's internal proxy (`--proxy-port`). Requires jaspr_cli ^0.22.2.
+- **DevTools merged into proxy** — WebSocket overlay now runs on the same port as the proxy at `/_duxt/ws` instead of a separate port. One fewer port per dev instance.
+- **`duxt build` desktop is optional** — `duxt build` defaults to web, `duxt build desktop` for Tauri. No longer requires a subcommand.
+- **Router import aliases** — module names with hyphens (e.g. `duxt-ui`) now produce valid Dart identifiers in generated routes
+- **Config templates** — all `duxt.config.dart` templates include a header comment explaining the file's purpose and linking to docs
+
+### Fixed
+- Fixed `duxt build` failing when BuildDesktopCommand was registered as a subcommand (args package required subcommand)
+- Fixed generated import aliases containing hyphens causing Dart compilation errors
+- File watcher now watches `lib/` recursively for namespace support
+
 ## [0.5.5] - 2026-02-11
 
 - Add Tauri desktop support: `duxt build desktop`, `duxt create --desktop`, `duxt dev --desktop`

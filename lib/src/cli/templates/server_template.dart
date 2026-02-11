@@ -138,7 +138,16 @@ jaspr:
 
 /// Server config
 String _serverConfig(String projectName) => '''
-/// Duxt configuration
+/// Duxt application configuration.
+///
+/// Central config file for your Duxt project. All application settings
+/// live here: app metadata, rendering mode, API base, server port, and
+/// database connection. Values use String.fromEnvironment so you can
+/// set defaults for development and override via environment variables
+/// in production.
+///
+/// Usage: import this file and access DuxtConfig.* anywhere in your app.
+/// Docs: https://duxt.dev/duxt/configuration
 class DuxtConfig {
   static const app = (
     name: '$projectName',
@@ -154,7 +163,14 @@ class DuxtConfig {
   /// Development server port
   static const int port = 3000;
 
-  /// Database configuration
+  /// Database configuration — passed to DuxtOrm.init(DuxtConfig.database).
+  /// Defaults to SQLite. Set environment variables to switch:
+  ///
+  /// MySQL:
+  ///   DB_DRIVER=mysql DB_HOST=localhost DB_PORT=3306 DB_NAME=$projectName DB_USER=root DB_PASS=secret duxt dev
+  ///
+  /// PostgreSQL:
+  ///   DB_DRIVER=postgres DB_HOST=localhost DB_PORT=5432 DB_NAME=$projectName DB_USER=postgres DB_PASS=secret duxt dev
   static const database = (
     driver: String.fromEnvironment('DB_DRIVER', defaultValue: 'sqlite'),
     host: String.fromEnvironment('DB_HOST', defaultValue: 'localhost'),

@@ -111,7 +111,15 @@ jaspr:
 
 /// Static config
 String _staticConfig(String projectName) => '''
-/// Duxt configuration
+/// Duxt application configuration.
+///
+/// Central config file for your Duxt project. All application settings
+/// live here: app metadata, rendering mode, API base, and server port.
+/// Values use String.fromEnvironment so you can set defaults for
+/// development and override via environment variables in production.
+///
+/// Usage: import this file and access DuxtConfig.* anywhere in your app.
+/// Docs: https://duxt.dev/duxt/configuration
 class DuxtConfig {
   static const app = (
     name: '$projectName',
@@ -126,6 +134,21 @@ class DuxtConfig {
 
   /// Development server port
   static const int port = 3000;
+
+  // ── Database (uncomment when adding duxt_orm) ──────────────────────
+  // Add duxt_orm to pubspec.yaml, then uncomment below and call:
+  //   await DuxtOrm.init(DuxtConfig.database);
+  //
+  // static const database = (
+  //   driver: String.fromEnvironment('DB_DRIVER', defaultValue: 'sqlite'),
+  //   host: String.fromEnvironment('DB_HOST', defaultValue: 'localhost'),
+  //   port: int.fromEnvironment('DB_PORT', defaultValue: 5432),
+  //   database: String.fromEnvironment('DB_NAME', defaultValue: '$projectName'),
+  //   username: String.fromEnvironment('DB_USER', defaultValue: ''),
+  //   password: String.fromEnvironment('DB_PASS', defaultValue: ''),
+  //   path: String.fromEnvironment('DB_PATH', defaultValue: 'data/$projectName.db'),
+  //   ssl: bool.fromEnvironment('DB_SSL', defaultValue: false),
+  // );
 }
 ''';
 
