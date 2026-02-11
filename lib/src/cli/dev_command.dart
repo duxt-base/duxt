@@ -793,7 +793,7 @@ class _DevTools {
 
   /// Start the WebSocket server
   Future<void> start() async {
-    final handler = webSocketHandler((WebSocketChannel webSocket) {
+    final handler = webSocketHandler((WebSocketChannel webSocket, String? subprotocol) {
       _clients.add(webSocket);
 
       // Send welcome message

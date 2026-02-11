@@ -17,11 +17,13 @@ import 'package:duxt/src/cli/clean_command.dart';
 import 'package:duxt/src/cli/update_command.dart';
 import 'package:duxt/src/cli/version_command.dart';
 import 'package:duxt/src/cli/docs_command.dart';
+import 'package:duxt/src/version.dart';
 
-const version = '0.4.15';
 const minJasprVersion = '0.22.2';
 
 void main(List<String> args) async {
+  final version = packageVersion;
+
   // Handle version flag
   if (args.contains('--version') || args.contains('-v')) {
     print('Duxt v$version');
