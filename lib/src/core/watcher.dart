@@ -30,6 +30,22 @@ class DuxtWatcher {
       _subscriptions.add(subscription);
     }
 
+    // Watch content/ for markdown changes (content-only hot reload)
+    final contentDir = p.join(projectDir, 'content');
+    if (Directory(contentDir).existsSync()) {
+      final watcher = DirectoryWatcher(contentDir);
+      _watchers.add(watcher);
+
+      final subscription = watcher.events.listen((event) {
+        if (event.path.endsWith('.md') || event.path.endsWith('.mdx') ||
+            event.path.endsWith('.yaml') || event.path.endsWith('.json')) {
+          _debounce(() => onFileChange(event.path, event.type));
+        }
+      });
+
+      _subscriptions.add(subscription);
+    }
+
     // Also watch top-level directories that may exist outside lib/
     final extraDirs = ['server', 'middleware', 'composables'];
     for (final dir in extraDirs) {

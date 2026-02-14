@@ -89,14 +89,21 @@ class PreviewCommand extends Command<int> {
     // Handle requests
     server.listen((request) => _handleRequest(request, buildDir.path));
 
-    // Wait for interrupt
+    // Handle both SIGINT (Ctrl+C) and SIGTERM (kill)
+    void shutdown() {
+      print('');
+      print('\x1B[90mShutting down...\x1B[0m');
+      apiProcess?.kill();
+      server.close();
+    }
+
+    ProcessSignal.sigterm.watch().listen((_) {
+      shutdown();
+      exit(0);
+    });
+
     await ProcessSignal.sigint.watch().first;
-
-    print('');
-    print('\x1B[90mShutting down...\x1B[0m');
-
-    apiProcess?.kill();
-    await server.close();
+    shutdown();
 
     return 0;
   }

@@ -122,21 +122,29 @@ class DevCommand extends Command<int> {
       print('  \x1B[90m${twTimer.elapsedMilliseconds}ms\x1B[0m');
     }
 
-    // Start file watcher for route generation
+    Process? apiProcess;
+    Process? jasprProcess;
+    Process? tailwindProcess;
+    HttpServer? proxyServer;
+    final devTools = _DevTools();
+
+    // Start file watcher for route generation and content hot reload
     print('\x1B[90m→\x1B[0m Starting file watcher...');
     final watcher = DuxtWatcher(projectDir, onFileChange: (path, changeType) async {
+      // Content-only hot reload: markdown/yaml changes skip build_runner entirely
+      if (path.contains('/content/') &&
+          (path.endsWith('.md') || path.endsWith('.mdx') || path.endsWith('.yaml') || path.endsWith('.json'))) {
+        final relativePath = p.relative(path, from: projectDir);
+        print('\x1B[36m↻\x1B[0m Content updated: $relativePath');
+        devTools.broadcast('reload', 'Content Updated', details: relativePath);
+        return;
+      }
       if (path.contains('/pages/') && (changeType == ChangeType.ADD || changeType == ChangeType.REMOVE)) {
         print('\x1B[33m↻\x1B[0m Route change: $path');
         await RouterGenerator.generate(projectDir);
       }
     });
     await watcher.start();
-
-    Process? apiProcess;
-    Process? jasprProcess;
-    Process? tailwindProcess;
-    HttpServer? proxyServer;
-    final devTools = _DevTools();
 
     final hasApi = !noApi && File('$projectDir/server/main.dart').existsSync();
 
