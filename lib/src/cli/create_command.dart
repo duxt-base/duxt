@@ -197,6 +197,21 @@ class CreateCommand extends Command<int> {
       );
       if (pubGetResult.exitCode == 0) {
         print('  \x1B[32m✓\x1B[0m Dependencies installed');
+
+        // Warm build cache so first `duxt dev` starts fast
+        print('');
+        print('\x1B[90m→\x1B[0m Warming build cache (this only happens once)...');
+        final buildTimer = Stopwatch()..start();
+        final buildResult = await Process.run(
+          'dart', ['run', 'build_runner', 'build', '--delete-conflicting-outputs'],
+          workingDirectory: projectDir.path,
+        );
+        buildTimer.stop();
+        if (buildResult.exitCode == 0) {
+          print('  \x1B[32m✓\x1B[0m Build cache warmed in ${(buildTimer.elapsedMilliseconds / 1000).toStringAsFixed(1)}s');
+        } else {
+          print('  \x1B[33m!\x1B[0m Build cache warmup failed (first `duxt dev` will be slower)');
+        }
       } else {
         print('  \x1B[33m!\x1B[0m Could not install dependencies automatically');
       }
