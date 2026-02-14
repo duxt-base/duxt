@@ -13,6 +13,7 @@ import 'package:watcher/watcher.dart';
 import '../core/watcher.dart';
 import '../core/tailwind.dart';
 import '../core/package_sync.dart';
+import '../core/build_events.dart';
 import 'tauri_scaffold.dart';
 
 /// Command to start development server
@@ -227,6 +228,8 @@ class DevCommand extends Command<int> {
     var isBuilding = false;
     var buildSpinner = _Spinner('Building');
     final jasprReady = Completer<void>();
+    var useDaemonEvents = false; // Once daemon connects, skip stdout parsing for builds
+    BuildEventClient? buildEventClient;
 
     jasprProcess.stdout.listen((data) {
       final output = utf8.decode(data).trim();
@@ -239,20 +242,24 @@ class DevCommand extends Command<int> {
           print('\x1B[34m[web]\x1B[0m $line');
         }
 
-        // Detect build events regardless of verbose mode
-        if (line.contains('Rebuilding web assets') || line.contains('Building web assets') || line.contains('About to build')) {
-          if (!isBuilding) {
-            isBuilding = true;
-            if (!verbose) buildSpinner.start();
-            devTools.broadcast('building', 'Building...', details: 'Compiling web assets');
+        // Once daemon events are active, only handle errors and ready signal from stdout
+        if (!useDaemonEvents) {
+          if (line.contains('Rebuilding web assets') || line.contains('Building web assets') || line.contains('About to build')) {
+            if (!isBuilding) {
+              isBuilding = true;
+              if (!verbose) buildSpinner.start();
+              devTools.broadcast('building', 'Building...', details: 'Compiling web assets');
+            }
+          } else if (line.contains('Rebuilt web assets') || line.contains('Done building web assets') || line.contains('Server application reloaded')) {
+            if (isBuilding) {
+              if (!verbose) buildSpinner.stop();
+              isBuilding = false;
+              devTools.broadcast('reload', 'Hot Reloaded', details: 'Build complete');
+            }
           }
-        } else if (line.contains('Rebuilt web assets') || line.contains('Done building web assets') || line.contains('Server application reloaded')) {
-          if (isBuilding) {
-            if (!verbose) buildSpinner.stop();
-            isBuilding = false;
-            devTools.broadcast('reload', 'Hot Reloaded', details: 'Build complete');
-          }
-        } else if (line.contains('[ERROR]') || (line.contains('Error') && !line.contains('no-op'))) {
+        }
+
+        if (line.contains('[ERROR]') || (line.contains('Error') && !line.contains('no-op'))) {
           if (!verbose) buildSpinner.stop();
           isBuilding = false;
           print('\x1B[31m[web]\x1B[0m $line');
@@ -296,6 +303,45 @@ class DevCommand extends Command<int> {
       isBuilding = false;
     }
     devTools.broadcast('success', 'Ready!', details: 'Development server started');
+
+    // Connect to build daemon for direct build events (replaces stdout parsing)
+    buildEventClient = BuildEventClient(
+      onBuildEvent: (type, {String? error}) {
+        switch (type) {
+          case BuildEventType.started:
+            if (!isBuilding) {
+              isBuilding = true;
+              if (!verbose) buildSpinner.start();
+              devTools.broadcast('building', 'Building...', details: 'Compiling web assets');
+            }
+          case BuildEventType.succeeded:
+            if (isBuilding) {
+              if (!verbose) buildSpinner.stop();
+              isBuilding = false;
+              devTools.broadcast('reload', 'Hot Reloaded', details: 'Build complete');
+            }
+          case BuildEventType.failed:
+            if (!verbose) buildSpinner.stop();
+            isBuilding = false;
+            final msg = error ?? 'Build failed';
+            print('\x1B[31m[build]\x1B[0m $msg');
+            devTools.broadcast('error', 'Build Error', details: msg.length > 80 ? '${msg.substring(0, 80)}...' : msg);
+        }
+      },
+      onLog: (message, {bool isError = false}) {
+        if (verbose || isError) {
+          print('\x1B[${isError ? '31' : '90'}m[build]\x1B[0m $message');
+        }
+      },
+    );
+
+    final connected = await buildEventClient.connect(projectDir);
+    if (connected) {
+      useDaemonEvents = true;
+      if (verbose) print('\x1B[90m[build]\x1B[0m Connected to build daemon (direct events)');
+    } else {
+      if (verbose) print('\x1B[90m[build]\x1B[0m Falling back to stdout parsing for build events');
+    }
 
     // Start proxy server on main port (also serves DevTools WebSocket at /_duxt/ws)
     final wsHandler = webSocketHandler((WebSocketChannel webSocket, String? subprotocol) {
@@ -348,6 +394,7 @@ class DevCommand extends Command<int> {
       print('');
       print('\x1B[90mShutting down...\x1B[0m');
 
+      buildEventClient?.close();
       tauriProcess?.kill();
       proxyServer?.close();
       devTools.close();
