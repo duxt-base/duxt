@@ -229,6 +229,7 @@ class DevCommand extends Command<int> {
     var buildSpinner = _Spinner('Building');
     final jasprReady = Completer<void>();
     var useDaemonEvents = false; // Once daemon connects, skip stdout parsing for builds
+    Stopwatch? rebuildTimer;
     BuildEventClient? buildEventClient;
 
     jasprProcess.stdout.listen((data) {
@@ -247,14 +248,18 @@ class DevCommand extends Command<int> {
           if (line.contains('Rebuilding web assets') || line.contains('Building web assets') || line.contains('About to build')) {
             if (!isBuilding) {
               isBuilding = true;
+              rebuildTimer = Stopwatch()..start();
               if (!verbose) buildSpinner.start();
               devTools.broadcast('building', 'Building...', details: 'Compiling web assets');
             }
           } else if (line.contains('Rebuilt web assets') || line.contains('Done building web assets') || line.contains('Server application reloaded')) {
             if (isBuilding) {
+              rebuildTimer?.stop();
+              final ms = rebuildTimer?.elapsedMilliseconds ?? 0;
               if (!verbose) buildSpinner.stop();
               isBuilding = false;
-              devTools.broadcast('reload', 'Hot Reloaded', details: 'Build complete');
+              print('\x1B[32m↻\x1B[0m Rebuilt in \x1B[1m${ms}ms\x1B[0m');
+              devTools.broadcast('reload', 'Hot Reloaded', details: '${ms}ms');
             }
           }
         }
@@ -311,16 +316,21 @@ class DevCommand extends Command<int> {
           case BuildEventType.started:
             if (!isBuilding) {
               isBuilding = true;
+              rebuildTimer = Stopwatch()..start();
               if (!verbose) buildSpinner.start();
               devTools.broadcast('building', 'Building...', details: 'Compiling web assets');
             }
           case BuildEventType.succeeded:
             if (isBuilding) {
+              rebuildTimer?.stop();
+              final ms = rebuildTimer?.elapsedMilliseconds ?? 0;
               if (!verbose) buildSpinner.stop();
               isBuilding = false;
-              devTools.broadcast('reload', 'Hot Reloaded', details: 'Build complete');
+              print('\x1B[32m↻\x1B[0m Rebuilt in \x1B[1m${ms}ms\x1B[0m');
+              devTools.broadcast('reload', 'Hot Reloaded', details: '${ms}ms');
             }
           case BuildEventType.failed:
+            rebuildTimer?.stop();
             if (!verbose) buildSpinner.stop();
             isBuilding = false;
             final msg = error ?? 'Build failed';
