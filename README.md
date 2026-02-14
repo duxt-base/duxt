@@ -19,15 +19,16 @@
 | Feature | Description |
 |---------|-------------|
 | **Module-Based Architecture** | Organize code by feature with pages, components, models & APIs |
-| **File-Based Routing** | Pages auto-generate routes — no manual configuration |
-| **Fullstack Template** | New projects include a complete blog example with SQLite |
-| **Built-in Tailwind CSS** | Automatic Tailwind compilation with watch mode |
+| **File-Based Routing** | Pages and markdown files auto-generate routes — no manual config |
+| **3 Project Templates** | Static (SSG), Server (SSR), or Client (SPA) — pick your rendering mode |
+| **Namespace Support** | Nest modules under namespaces like `Admin/Post` for grouped routes |
+| **Built-in Tailwind CSS** | Automatic compilation with watch mode — no `jaspr_tailwind` needed |
+| **Desktop Apps** | Build native desktop apps with Tauri via `duxt build desktop` |
+| **Scaffold Generator** | Full CRUD (model, API, pages, forms) from a single command |
+| **Content & Docs** | Markdown content with frontmatter, table of contents, custom components |
+| **Security Middleware** | CORS, rate limiting, CSRF, body limits, security headers out of the box |
 | **Multi-Target Builds** | Cross-compile for linux-x64, linux-arm64, macos-x64, macos-arm64 |
-| **Simple API Client** | Static `Api` class with auth, headers & error handling |
-| **SPA State Management** | `DuxtState` mixin handles loading, error & data states |
-| **Scaffold Generator** | Full CRUD generation with a single command |
-| **Middleware** | Route guards for authentication & authorization |
-| **Content Support** | Markdown content with frontmatter for docs sites |
+| **Performance Tracing** | `--perf` flag shows rebuild stage timings to diagnose slow builds |
 
 ---
 
@@ -48,9 +49,15 @@ dart pub get
 duxt dev
 ```
 
-Your app is running at `http://localhost:4000` with:
-- SSR frontend on port 4000
-- API server on port 3001
+Choose a template when prompted:
+
+| Template | Mode | Best For |
+|----------|------|----------|
+| **static** | SSG | Marketing sites, landing pages, docs |
+| **server** | SSR | Dynamic apps, blogs, content sites with ORM + API |
+| **client** | SPA | Interactive single-page apps with client-side rendering |
+
+Your app runs at `http://localhost:4000` with SSR frontend and API server on port 4001.
 
 ---
 
@@ -59,16 +66,24 @@ Your app is running at `http://localhost:4000` with:
 ```
 my-app/
 ├── lib/
-│   ├── posts/                    # Feature module
+│   ├── blog/                       # Feature module
 │   │   ├── pages/
-│   │   │   ├── index.dart        # -> /posts
-│   │   │   ├── _id_.dart         # -> /posts/:id
-│   │   │   └── _id_/
-│   │   │       └── edit.dart     # -> /posts/:id/edit
+│   │   │   ├── index.dart          # -> /blog
+│   │   │   └── _id_.dart           # -> /blog/:id
+│   │   ├── content/
+│   │   │   └── getting-started.md  # -> /blog/getting-started
 │   │   ├── components/
-│   │   │   └── post_card.dart
 │   │   ├── model.dart
 │   │   └── api.dart
+│   ├── admin/                      # Namespace
+│   │   ├── posts/                  # -> /admin/posts
+│   │   │   └── pages/
+│   │   └── layouts/
+│   │       └── default.dart        # Wraps all /admin/* routes
+│   ├── theme/                      # Theme namespace (strips prefix)
+│   │   └── home/
+│   │       └── pages/
+│   │           └── index.dart      # -> /
 │   ├── shared/
 │   │   ├── layouts/
 │   │   │   └── default.dart
@@ -76,56 +91,80 @@ my-app/
 │   │   └── middleware/
 │   ├── app.dart
 │   └── main.dart
-├── server/                       # Backend
-│   ├── db.dart                   # Database setup
-│   ├── api/                      # API routes
+├── server/                         # Backend (server template)
+│   ├── db.dart
+│   ├── api/
 │   └── models/
 ├── web/
-│   └── styles.tw.css            # Tailwind input
-└── .duxt/                        # Generated files
-    └── routes.g.dart
+│   └── styles.tw.css               # Tailwind input
+├── duxt.config.dart                # Project configuration
+└── .generated/
+    └── routes.dart                 # Auto-generated routes
 ```
+
+### Routing Conventions
+
+| File Path | Route |
+|-----------|-------|
+| `lib/home/pages/index.dart` | `/` |
+| `lib/blog/pages/index.dart` | `/blog` |
+| `lib/blog/pages/_id_.dart` | `/blog/:id` |
+| `lib/blog/pages/_id_/edit.dart` | `/blog/:id/edit` |
+| `lib/blog/content/intro.md` | `/blog/intro` |
+| `lib/admin/posts/pages/index.dart` | `/admin/posts` |
+| `lib/theme/about/pages/index.dart` | `/about` |
 
 ---
 
 ## CLI Commands
 
-| Command | Description | Jaspr Equivalent |
-|---------|-------------|------------------|
-| `duxt create` | Create a new project | - |
-| `duxt dev` | Start dev server with SSR + hot reload | `jaspr serve` |
-| `duxt build` | Build for production | `jaspr build` |
-| `duxt start` | Run production server | - |
-| `duxt preview` | Preview production build locally | - |
-| `duxt generate` | Generate static site (SSG only) | - |
-| `duxt g` | Generate files | - |
-| `duxt scaffold` | Generate full CRUD module | - |
-| `duxt d` | Delete module, page, or component | - |
-| `duxt doctor` | Show environment diagnostics | `jaspr doctor` |
-| `duxt clean` | Clean build artifacts | `jaspr clean` |
-| `duxt update` | Update CLI to latest version | - |
-| `duxt version` | Show version | - |
+| Command | Description |
+|---------|-------------|
+| `duxt create` | Create a new project (static/server/client) |
+| `duxt dev` | Dev server with SSR + hot reload |
+| `duxt build` | Build for production |
+| `duxt build desktop` | Build native desktop app (Tauri) |
+| `duxt start` | Run production server |
+| `duxt preview` | Preview production build locally |
+| `duxt generate` | Generate static site (SSG) |
+| `duxt g` | Generate module, page, component, model, api, layout |
+| `duxt scaffold` | Generate full CRUD module |
+| `duxt d` | Delete module, page, or component |
+| `duxt docs` | Generate API docs, doc pages, tutorials |
+| `duxt info` | Show project structure summary |
+| `duxt doctor` | Environment diagnostics |
+| `duxt clean` | Clean build artifacts |
+| `duxt update` | Update CLI to latest version |
 
-### Development Options
+### Dev Server Options
 
 ```bash
-# Start with custom ports
-duxt dev --port=8080 --api-port=4000
-
-# Skip API server
-duxt dev --no-api
+duxt dev                          # Default: port 4000
+duxt dev --port=8080              # Custom port
+duxt dev --no-api                 # Skip API server
+duxt dev --verbose                # Detailed build output
+duxt dev --perf                   # Rebuild stage timings
+duxt dev --reload                 # Module reload mode (faster, experimental)
+duxt dev --desktop                # Tauri desktop window
 ```
 
 ### Build Options
 
 ```bash
-# Build for specific target
-duxt build --target=linux-arm64
+duxt build                        # Web build (default)
+duxt build --target=linux-arm64   # Cross-compile for specific target
+duxt build --all-targets          # All platforms (requires Docker)
+duxt build desktop                # Native desktop app via Tauri
+```
 
-# Build for all targets
-duxt build --all-targets
+### Production
 
-# Available targets: linux-x64, linux-arm64, macos-x64, macos-arm64
+```bash
+duxt start                        # Auto-finds free port
+duxt start --port=8080            # Specific port
+duxt start --open                 # Open browser after starting
+duxt preview                      # Preview build on port 4000
+duxt preview --port=3000          # Custom preview port
 ```
 
 ---
@@ -135,131 +174,56 @@ duxt build --all-targets
 ### Generate Files
 
 ```bash
-# Module (creates pages/, components/, model.dart, api.dart)
-duxt g module posts
-
-# Page (with dynamic params)
-duxt g page posts/_id_
-
-# Component (with props)
-duxt g component posts/card title:String author:String
-
-# Model (with fields)
-duxt g model post title:String content:String createdAt:DateTime
-
-# API
-duxt g api posts
-
-# Layout
-duxt g layout dashboard
+duxt g module posts                              # Full module
+duxt g module Admin/Post                         # Namespaced module -> /admin/posts
+duxt g page posts/_id_                           # Dynamic page
+duxt g component posts/card title:String         # Component with props
+duxt g model post title:String content:String    # Model with fields
+duxt g api posts                                 # API client
+duxt g layout dashboard                          # Layout
+duxt g layout Admin                              # Namespace layout
 ```
-
-**Type shortcuts:** `p`=page, `c`=component, `m`=model, `a`=api, `l`=layout
 
 ### Scaffold (Full CRUD)
 
 ```bash
 duxt scaffold posts title:String content:String author:String
+duxt scaffold Admin/Post title:String body:String    # Namespaced
 ```
 
-Generates:
-- Model with JSON serialization
-- API class with CRUD methods
-- List page with pagination
-- Detail page
-- Create/Edit forms
+Generates: model, API, list page, detail page, create form, card component, form component, and server-side ORM model with REST endpoints.
 
 ### Delete Files
 
 ```bash
-duxt d module posts      # Delete entire module
-duxt d page posts/_id_   # Delete specific page
-duxt d component posts/card
+duxt d module posts        # Delete entire module
+duxt d page posts/_id_     # Delete specific page
+duxt d component header    # Delete component
 ```
 
 ---
 
 ## API Client
 
-### Configuration
-
 ```dart
 import 'package:duxt/duxt.dart';
 
-// Set base URL
+// Configure
 Api.configure(baseUrl: 'https://api.example.com');
-
-// Set auth token
 Api.setAuth('your-jwt-token');
 
-// Add custom headers
-Api.configure(
-  baseUrl: 'https://api.example.com',
-  headers: {'X-Custom-Header': 'value'},
-);
-```
-
-### Making Requests
-
-```dart
-// GET
+// CRUD
 final posts = await Api.get('/posts');
-final post = await Api.get('/posts/1');
-
-// POST
-final newPost = await Api.post('/posts', body: {
-  'title': 'Hello World',
-  'content': 'My first post',
-});
-
-// PUT
+final post = await Api.post('/posts', body: {'title': 'Hello'});
 await Api.put('/posts/1', body: {'title': 'Updated'});
-
-// PATCH
-await Api.patch('/posts/1', body: {'title': 'Patched'});
-
-// DELETE
 await Api.delete('/posts/1');
-```
-
-### Module API Pattern
-
-```dart
-// lib/posts/api.dart
-class PostsApi {
-  static Future<List<Post>> getAll() async {
-    final data = await Api.get('/posts');
-    return Post.fromList(data);
-  }
-
-  static Future<Post> getOne(String id) async {
-    final data = await Api.get('/posts/$id');
-    return Post.fromJson(data);
-  }
-
-  static Future<Post> create(Post post) async {
-    final data = await Api.post('/posts', body: post.toJson());
-    return Post.fromJson(data);
-  }
-
-  static Future<Post> update(String id, Post post) async {
-    final data = await Api.put('/posts/$id', body: post.toJson());
-    return Post.fromJson(data);
-  }
-
-  static Future<void> delete(String id) async {
-    await Api.delete('/posts/$id');
-  }
-}
 ```
 
 ---
 
 ## State Management (SPA)
 
-### DuxtState
-
-Handle async data loading with automatic state management:
+### DuxtState — Single Data Source
 
 ```dart
 class PostsPage extends StatefulComponent {
@@ -272,184 +236,98 @@ class _PostsState extends DuxtState<PostsPage, List<Post>> {
   Future<List<Post>> load() => PostsApi.getAll();
 
   @override
-  Component buildLoading() => DSpinner();
+  Component buildLoading() => Text('Loading...');
 
   @override
-  Component buildError(Object error) => DAlert(
-    title: 'Error',
-    description: error.toString(),
-    color: DAlertColor.error,
-  );
+  Component buildError(Object error) => Text('Error: $error');
 
   @override
   Component buildData(List<Post> posts) => div([
-    for (final post in posts)
-      PostCard(post: post),
+    for (final post in posts) PostCard(post: post),
   ]);
 }
 ```
 
-### DuxtMultiState
-
-Load multiple data sources in parallel:
+### DuxtMultiState — Multiple Data Sources
 
 ```dart
 class _DashboardState extends DuxtMultiState<DashboardPage> {
   @override
-  Map<String, Future<dynamic>> get loaders => {
-    'posts': PostsApi.getAll(),
-    'users': UsersApi.getAll(),
-    'stats': StatsApi.get(),
+  Map<String, Future<dynamic> Function()> get loaders => {
+    'posts': () => PostsApi.getAll(),
+    'stats': () => StatsApi.get(),
   };
 
   @override
   Component buildData(Map<String, dynamic> data) {
-    final posts = data['posts'] as List<Post>;
-    final users = data['users'] as List<User>;
-    final stats = data['stats'] as Stats;
-
-    return Dashboard(posts: posts, users: users, stats: stats);
+    final posts = getData<List<Post>>('posts');
+    final stats = getData<Stats>('stats');
+    return Dashboard(posts: posts!, stats: stats!);
   }
 }
 ```
 
 ---
 
-## Middleware
-
-### Create Middleware
+## Navigation
 
 ```dart
-// lib/shared/middleware/auth_middleware.dart
-class AuthMiddleware extends DuxtMiddleware {
-  @override
-  Future<MiddlewareResult> handle(RouteState route) async {
-    final token = await TokenStorage.getToken();
+import 'package:duxt/duxt.dart';
 
-    if (token == null) {
-      return MiddlewareResult.redirect('/login');
-    }
-
-    return MiddlewareResult.next();
-  }
-}
-```
-
-### Apply to Pages
-
-```dart
-class SecurePage extends DuxtPage {
-  @override
-  List<DuxtMiddleware> get middleware => [AuthMiddleware()];
-
-  @override
-  Component build(BuildContext context) => div([
-    text('Protected content'),
-  ]);
-}
-```
-
----
-
-## Layouts
-
-### Create a Layout
-
-```dart
-// lib/shared/layouts/dashboard_layout.dart
-class DashboardLayout extends DuxtLayout {
-  @override
-  Component build(BuildContext context, Component child) => div(
-    classes: 'flex min-h-screen',
-    [
-      Sidebar(),
-      main(classes: 'flex-1 p-6', [child]),
-    ],
-  );
-}
-```
-
-### Apply to Pages
-
-```dart
-class DashboardPage extends DuxtPage {
-  @override
-  Type get layout => DashboardLayout;
-
-  @override
-  Component build(BuildContext context) => div([
-    text('Dashboard content'),
-  ]);
-}
-```
-
----
-
-## Server API (Backend)
-
-### Create API Routes
-
-```dart
-// lib/api/server.dart
-import 'package:duxt/server.dart';
-
-void main() {
-  final server = DuxtServer();
-
-  // Middleware
-  server.use(corsMiddleware());
-  server.use(loggerMiddleware());
-  server.use(jsonBodyParser());
-
-  // Routes
-  server.get('/posts', (req, res) async {
-    final posts = await db.posts.findAll();
-    return res.json(posts);
-  });
-
-  server.post('/posts', (req, res) async {
-    final body = req.body;
-    final post = await db.posts.create(body);
-    return res.json(post, status: 201);
-  });
-
-  server.get('/posts/:id', (req, res) async {
-    final id = req.params['id'];
-    final post = await db.posts.findById(id);
-    if (post == null) return res.notFound();
-    return res.json(post);
-  });
-
-  server.listen(port: 3000);
-}
+// Extension methods on BuildContext
+context.push('/posts');
+context.push('/posts/1', extra: {'from': 'list'});
+context.replace('/login');
+context.back();
+context.pushNamed('post-detail', params: {'id': '123'});
+context.preload('/posts');  // Preload for faster navigation
 ```
 
 ---
 
 ## Content & Documentation
 
-Build documentation sites with markdown:
+Place markdown files in any module's `content/` directory:
+
+```
+lib/docs/content/
+├── getting-started.md    # -> /docs/getting-started
+├── guides/
+│   └── routing.md        # -> /docs/guides/routing
+└── api-reference.md      # -> /docs/api-reference
+```
+
+Generate documentation scaffolds:
+
+```bash
+duxt docs page getting-started       # Create doc page template
+duxt docs tutorial deploy-guide      # Create step-by-step tutorial
+duxt docs generate                   # Generate API docs from code
+```
+
+---
+
+## Security Middleware
+
+Server template includes production-ready middleware:
 
 ```dart
-// Load markdown content
-final content = await ContentLoader.load('docs/getting-started.md');
+import 'package:duxt/server.dart';
 
-// Access frontmatter
-print(content.frontmatter['title']);
-print(content.frontmatter['description']);
+final server = DuxtServer();
 
-// Render HTML
-print(content.html);
-
-// Get table of contents
-print(content.toc);
+server.use(securityHeaders());         // X-Content-Type-Options, X-Frame-Options
+server.use(bodyLimit(maxBytes: 1024 * 1024));  // 1 MB body limit
+server.use(rateLimit(maxRequests: 100));        // 100 req/min per IP
+server.use(timeout(duration: Duration(seconds: 30)));
+server.use(cors(origins: ['https://mysite.com']));
 ```
 
 ---
 
 ## Tailwind CSS
 
-Duxt includes built-in Tailwind CSS compilation. No additional setup required.
+Built-in compilation — no `jaspr_tailwind` dependency needed.
 
 ```css
 /* web/styles.tw.css */
@@ -459,41 +337,27 @@ Duxt includes built-in Tailwind CSS compilation. No additional setup required.
 @source "../.duxt/packages/**/*.dart";
 ```
 
-Tailwind automatically:
-- Compiles on `duxt dev` with watch mode
-- Builds optimized CSS on `duxt build`
-- Scans Dart files for class names
+Automatically compiles on `duxt dev` (watch mode) and `duxt build` (optimized).
 
 ---
 
 ## Using with Duxt UI
 
-Duxt works seamlessly with [Duxt UI](https://github.com/duxt-base/duxt-ui) for beautiful, pre-built components:
+[Duxt UI](https://github.com/duxt-base/duxt-ui) provides pre-built Tailwind components:
 
 ```yaml
 dependencies:
-  duxt: ^0.3.0
+  duxt: ^0.6.0
   duxt_ui: ^0.2.0
 ```
 
 ```dart
-import 'package:duxt/duxt.dart';
 import 'package:duxt_ui/duxt_ui.dart';
 
-class HomePage extends DuxtPage {
-  @override
-  Component build(BuildContext context) => DContainer([
-    DPageHero(
-      title: 'Welcome to Duxt',
-      description: 'Build beautiful Dart web apps',
-    ),
-    DButton(
-      label: 'Get Started',
-      color: DButtonColor.primary,
-      onClick: () => Router.of(context).push('/docs'),
-    ),
-  ]);
-}
+DButton(label: 'Get Started', color: DButtonColor.primary);
+DInput(label: 'Email', type: InputType.email);
+DModal(title: 'Confirm', children: [...]);
+DAlert(title: 'Success', color: DAlertColor.success);
 ```
 
 ---
@@ -501,8 +365,8 @@ class HomePage extends DuxtPage {
 ## Requirements
 
 - **Dart SDK** ^3.0.0
-- **Jaspr** ^0.22.1
-- **Tailwind CSS** v4+ (auto-detected or installed)
+- **Jaspr** ^0.22.2
+- **Tailwind CSS** v4+ (auto-detected)
 
 ---
 
@@ -514,13 +378,12 @@ Visit [duxt.dev](https://duxt.dev) for full documentation.
 
 ## Contributing
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) first.
+Contributions welcome! Please read our [Contributing Guide](CONTRIBUTING.md) first.
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing`)
-5. Open a Pull Request
+2. Create your feature branch
+3. Commit your changes
+4. Open a Pull Request
 
 ---
 
