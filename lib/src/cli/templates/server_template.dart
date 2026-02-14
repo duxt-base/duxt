@@ -42,7 +42,7 @@ class ServerTemplate {
     // App files
     await _write(dir, 'lib/app.dart', _serverAppTemplate);
     await _write(dir, 'lib/main.client.dart', mainClientTemplate);
-    await _write(dir, 'lib/main.server.dart', blogMainServerTemplate(projectName));
+    await _write(dir, 'lib/main.server.dart', _mainServerDartTemplate(projectName));
 
     // Layouts
     await _write(dir, 'lib/shared/layouts/default.dart', _serverLayoutTemplate(projectName));
@@ -60,7 +60,7 @@ class ServerTemplate {
     // Server (DuxtServer + ORM)
     await _write(dir, 'server/main.dart', _serverMainTemplate(projectName));
     await _write(dir, 'server/db.dart', _serverDbTemplate(projectName));
-    await _write(dir, 'server/api/posts.dart', postsApiTemplate(projectName));
+    await _write(dir, 'server/api/posts.dart', _simplePostsApiTemplate(projectName));
 
     // Web
     await _write(dir, 'web/styles.tw.css', tailwindTemplate);
@@ -338,7 +338,7 @@ class HomePage extends StatelessComponent {
 /// Server blog index - SSR with AsyncStatelessComponent using duxt_html
 const _serverBlogIndexTemplate = r'''
 import 'package:jaspr/jaspr.dart' hide Text;
-import 'package:jaspr/server.dart';
+import 'package:jaspr/server.dart' hide Text;
 import 'package:duxt_html/duxt_html.dart';
 import 'package:duxt_ui/duxt_ui.dart';
 
@@ -641,6 +641,127 @@ void main() async {
   server.start();
 }
 ''';
+
+/// main.server.dart for simple server template (Post only, no Category)
+String _mainServerDartTemplate(String projectName) => '''
+import 'dart:io';
+import 'package:jaspr/dom.dart';
+import 'package:jaspr/server.dart';
+import 'package:duxt/duxt.dart';
+import 'package:duxt_orm/duxt_orm.dart';
+import 'app.dart';
+import 'models/post.dart';
+
+import 'main.server.options.dart';
+
+void main() async {
+  // Initialize ORM for SSR data fetching
+  Post.register();
+
+  final dataDir = Platform.environment['DATA_DIR'] ?? '.';
+  await DuxtOrm.init((
+    driver: 'sqlite',
+    host: '',
+    port: 0,
+    database: '',
+    username: '',
+    password: '',
+    path: '\$dataDir/app.db',
+    ssl: false,
+  ));
+
+  // Auto-migrate database tables
+  await DuxtOrm.migrate();
+
+  Api.configure(baseUrl: '/api');
+  Jaspr.initializeApp(options: defaultServerOptions);
+
+  runApp(Document(
+    title: '$projectName',
+    head: [
+      link(href: '/styles.css', rel: 'stylesheet'),
+    ],
+    body: App(),
+  ));
+}
+''';
+
+/// Simple posts API template (no category relations)
+String _simplePostsApiTemplate(String projectName) {
+  return '''
+import 'package:duxt/server.dart';
+import 'package:duxt_orm/duxt_orm.dart';
+import 'package:$projectName/models/post.dart';
+
+void registerPostRoutes(DuxtServer server) {
+  // GET /api/posts - List all published posts
+  server.get('/api/posts', (req) async {
+    final posts = await Post.findAll(publishedOnly: true);
+    return json({\'posts\': posts.map((p) => p.toJson()).toList()});
+  });
+
+  // GET /api/posts/:slug - Get single post by slug
+  server.get('/api/posts/:slug', (req) async {
+    final slug = req.params[\'slug\'];
+    if (slug == null) return json({\'error\': \'Slug required\'}, statusCode: 400);
+
+    final post = await Post.findBySlug(slug);
+    if (post == null) return json({\'error\': \'Not found\'}, statusCode: 404);
+
+    return json({\'post\': post.toJson()});
+  });
+
+  // POST /api/posts - Create new post
+  server.post('/api/posts', (req) async {
+    final body = req.body as Map<String, dynamic>?;
+    if (body == null) return json({\'error\': \'Body required\'}, statusCode: 400);
+
+    try {
+      final post = Post.fromJson(body);
+      await post.save();
+      return json({\'post\': post.toJson()}, statusCode: 201);
+    } catch (e) {
+      print(\'Create failed: \$e\');
+      return json({\'error\': \'Invalid request data\'}, statusCode: 400);
+    }
+  });
+
+  // PUT /api/posts/:id - Update post
+  server.put('/api/posts/:id', (req) async {
+    final id = int.tryParse(req.params[\'id\'] ?? \'\');
+    if (id == null) return json({\'error\': \'Invalid ID\'}, statusCode: 400);
+
+    final body = req.body as Map<String, dynamic>?;
+    if (body == null) return json({\'error\': \'Body required\'}, statusCode: 400);
+
+    final post = await Model<Post>().find(id);
+    if (post == null) return json({\'error\': \'Not found\'}, statusCode: 404);
+
+    // Update fields
+    post.title = body[\'title\'] as String? ?? post.title;
+    post.slug = body[\'slug\'] as String? ?? post.slug;
+    post.content = body[\'content\'] as String? ?? post.content;
+    post.excerpt = body[\'excerpt\'] as String? ?? post.excerpt;
+    post.published = body[\'published\'] as bool? ?? post.published;
+
+    await post.save();
+    return json({\'post\': post.toJson()});
+  });
+
+  // DELETE /api/posts/:id - Delete post
+  server.delete('/api/posts/:id', (req) async {
+    final id = int.tryParse(req.params[\'id\'] ?? \'\');
+    if (id == null) return json({\'error\': \'Invalid ID\'}, statusCode: 400);
+
+    final post = await Model<Post>().find(id);
+    if (post == null) return json({\'error\': \'Not found\'}, statusCode: 404);
+
+    await post.destroy();
+    return json({\'success\': true});
+  });
+}
+''';
+}
 
 /// Server db.dart
 String _serverDbTemplate(String projectName) => '''

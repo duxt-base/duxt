@@ -100,13 +100,6 @@ targets:
             - lib/**/*.dart
           exclude:
             - lib/.generated/**
-
-      # Only compile the web entry point
-      build_web_compilers|entrypoint:
-        generate_for:
-          include:
-            - web/main.client.dart
-            - lib/main.client.dart
 ''';
 
 /// .gitignore template

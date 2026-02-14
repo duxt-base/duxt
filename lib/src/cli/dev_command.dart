@@ -221,7 +221,9 @@ class DevCommand extends Command<int> {
 
     jasprProcess.stdout.listen((data) {
       final output = utf8.decode(data).trim();
-      for (final line in output.split('\n')) {
+      // Split on both \n and \r — Jaspr's spinner uses \r for in-place updates,
+      // so build start/end messages can merge into one "line" if only split by \n
+      for (final line in output.split(RegExp(r'[\n\r]+'))) {
         if (line.trim().isEmpty) continue;
 
         if (verbose) {
@@ -239,7 +241,7 @@ class DevCommand extends Command<int> {
           if (isBuilding) {
             if (!verbose) buildSpinner.stop();
             isBuilding = false;
-            devTools.broadcast('success', 'Hot Reloaded', details: 'Build complete');
+            devTools.broadcast('reload', 'Hot Reloaded', details: 'Build complete');
           }
         } else if (line.contains('[ERROR]') || (line.contains('Error') && !line.contains('no-op'))) {
           if (!verbose) buildSpinner.stop();
@@ -473,6 +475,19 @@ class DevCommand extends Command<int> {
 
       final proxyResponse = await proxyRequest.close();
 
+      // Intercept 404 for client JS — in DDC dev mode, Jaspr's SSR injects
+      // a <script src="main.client.dart.js"> tag but DDC uses module loading
+      // instead of standalone JS. Return a stub so the browser doesn't show
+      // console errors. SSR renders the full page; client hydration works in
+      // production builds (dart2js).
+      if (proxyResponse.statusCode == 404 && path.endsWith('.client.dart.js')) {
+        proxyResponse.drain<void>();
+        return shelf.Response.ok(
+          '// [Duxt] SSR mode — client JS served via DDC modules in dev\n',
+          headers: {'Content-Type': 'application/javascript'},
+        );
+      }
+
       // Read response body as bytes to handle binary content
       var responseBytes = await proxyResponse.fold<List<int>>(
         <int>[],
@@ -488,10 +503,13 @@ class DevCommand extends Command<int> {
         }
       });
 
-      // Inject dev tools script into HTML responses
+      // Inject dev tools script and clean up HTML responses
       final contentType = headers['content-type'] ?? '';
       if (contentType.contains('text/html')) {
         var html = utf8.decode(responseBytes);
+        // Remove Jaspr's client JS script tag — DDC dev mode uses modules,
+        // not standalone JS. This prevents a useless 404 network request.
+        html = html.replaceAll(RegExp(r'<script[^>]+src="[^"]*\.client\.dart\.js"[^>]*>\s*</script>'), '');
         final script = _DevTools.overlayScript.replaceAll('__PROXY_PORT__', proxyPort.toString());
         // Inject before </body>
         if (html.contains('</body>')) {
@@ -519,14 +537,28 @@ class DevCommand extends Command<int> {
         );
       }
 
-      // For asset requests (.js, .css, etc.), return 503 so browser retries
+      // For asset requests (.js, .css, etc.), return 503 with correct MIME type
+      // so the browser doesn't reject them due to strict MIME checking
       final ext = p.extension(path).toLowerCase();
-      if (['.js', '.css', '.map', '.json', '.woff', '.woff2', '.ttf', '.png', '.jpg', '.svg', '.ico'].contains(ext)) {
+      const mimeTypes = {
+        '.js': 'application/javascript',
+        '.css': 'text/css',
+        '.map': 'application/json',
+        '.json': 'application/json',
+        '.woff': 'font/woff',
+        '.woff2': 'font/woff2',
+        '.ttf': 'font/ttf',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon',
+      };
+      if (mimeTypes.containsKey(ext)) {
         return shelf.Response(
           503,
-          body: 'Server starting...',
+          body: ext == '.css' ? '/* Server starting... */' : ext == '.js' ? '// Server starting...' : '',
           headers: {
-            'Content-Type': 'text/plain',
+            'Content-Type': mimeTypes[ext]!,
             'Retry-After': '2',
           },
         );
@@ -768,8 +800,13 @@ class _DevTools {
       'timestamp': DateTime.now().millisecondsSinceEpoch,
     });
 
-    if (type == 'success' || type == 'building') {
+    // Track last state so new clients get the current status.
+    // Clear building state on reload/error/success so reconnecting
+    // clients don't see a stale "Building..." toast.
+    if (type == 'building') {
       _lastState = payload;
+    } else if (type == 'reload' || type == 'error' || type == 'success') {
+      _lastState = null;
     }
 
     for (final client in _clients.toList()) {

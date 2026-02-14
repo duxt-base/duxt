@@ -14,10 +14,8 @@ void main() {
       expect(buildYamlTemplate, contains('lib/.generated/**'));
     });
 
-    test('scopes entrypoint builder', () {
-      expect(buildYamlTemplate, contains('build_web_compilers|entrypoint'));
-      expect(buildYamlTemplate, contains('web/main.client.dart'));
-      expect(buildYamlTemplate, contains('lib/main.client.dart'));
+    test('does not restrict entrypoint builder', () {
+      expect(buildYamlTemplate, isNot(contains('build_web_compilers|entrypoint')));
     });
   });
 
@@ -45,6 +43,38 @@ void main() {
       final result = configTemplate('my_app');
       expect(result, contains("name: 'my_app'"));
       expect(result, contains('DuxtConfig'));
+    });
+  });
+
+  group('client JS script tag stripping', () {
+    // The regex used in dev_command.dart to strip Jaspr's client JS script
+    // tag from SSR HTML responses (DDC dev mode uses modules, not standalone JS)
+    final clientJsPattern = RegExp(
+      r'<script[^>]+src="[^"]*\.client\.dart\.js"[^>]*>\s*</script>',
+    );
+
+    test('strips deferred client JS script tag', () {
+      const html = '<head><script defer src="/main.client.dart.js"></script></head>';
+      final result = html.replaceAll(clientJsPattern, '');
+      expect(result, equals('<head></head>'));
+    });
+
+    test('strips client JS script tag without defer', () {
+      const html = '<head><script src="/main.client.dart.js"></script></head>';
+      final result = html.replaceAll(clientJsPattern, '');
+      expect(result, equals('<head></head>'));
+    });
+
+    test('does not strip non-client JS script tags', () {
+      const html = '<head><script src="/other.js"></script></head>';
+      final result = html.replaceAll(clientJsPattern, '');
+      expect(result, equals(html));
+    });
+
+    test('does not strip inline scripts', () {
+      const html = '<head><script>console.log("hello")</script></head>';
+      final result = html.replaceAll(clientJsPattern, '');
+      expect(result, equals(html));
     });
   });
 }
