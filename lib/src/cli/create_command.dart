@@ -188,12 +188,24 @@ class CreateCommand extends Command<int> {
         await TauriScaffold.scaffold(projectDir.path, dartName);
       }
 
+      // Warm build cache — run dart pub get so first `duxt dev` is faster
+      print('');
+      print('\x1B[90m→\x1B[0m Installing dependencies...');
+      final pubGetResult = await Process.run(
+        'dart', ['pub', 'get'],
+        workingDirectory: projectDir.path,
+      );
+      if (pubGetResult.exitCode == 0) {
+        print('  \x1B[32m✓\x1B[0m Dependencies installed');
+      } else {
+        print('  \x1B[33m!\x1B[0m Could not install dependencies automatically');
+      }
+
       print('');
       print('\x1B[32m✓\x1B[0m Project created successfully!');
       print('');
       print('Next steps:');
       print('  cd $projectName');
-      print('  dart pub get');
       if (isDesktop) {
         print('  duxt build desktop');
       } else {

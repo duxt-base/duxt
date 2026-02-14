@@ -74,14 +74,34 @@ class DuxtConfig {
 }
 ''';
 
-/// build.yaml template for client mode entry point
+/// Optimized build.yaml template
+/// - Scopes jaspr_builder to lib/ only (excludes server/, test/)
+/// - Disables jaspr_tailwind (Duxt handles CSS directly)
+/// - Limits entrypoint builder to web/main.client.dart
 const buildYamlTemplate = '''
 targets:
   \$default:
     builders:
-      build_web_compilers:entrypoint:
+      # Scope Jaspr builder to lib/ only — skip server/ and test/
+      jaspr_builder|jaspr:
         generate_for:
-          - web/main.client.dart
+          include:
+            - lib/**/*.dart
+          exclude:
+            - server/**
+            - test/**
+            - lib/.generated/**
+
+      # Only compile the web entry point
+      build_web_compilers|entrypoint:
+        generate_for:
+          include:
+            - web/main.client.dart
+            - lib/main.client.dart
+
+      # Disable jaspr_tailwind — Duxt runs its own Tailwind CLI
+      jaspr_tailwind|compiler:
+        enabled: false
 ''';
 
 /// .gitignore template

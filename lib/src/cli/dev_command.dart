@@ -9,7 +9,10 @@ import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:yaml/yaml.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../core/router_generator.dart';
+import 'package:watcher/watcher.dart';
 import '../core/watcher.dart';
+import '../core/tailwind.dart';
+import '../core/package_sync.dart';
 import 'tauri_scaffold.dart';
 
 /// Command to start development server
@@ -94,30 +97,25 @@ class DevCommand extends Command<int> {
       print('  Done');
     }
 
-    // Sync duxt_ui package for Tailwind scanning
-    print('\x1B[90m→\x1B[0m Syncing packages...');
-    await _syncPackages(projectDir);
+    // Parallel startup: sync packages + generate routes + kill stale processes
+    print('\x1B[90m→\x1B[0m Preparing project (parallel)...');
+    await Future.wait([
+      PackageSync.sync(projectDir),
+      RouterGenerator.generate(projectDir),
+      Process.run('pkill', ['-f', 'build_runner.*${projectDir.replaceAll('/', '\\/')}']),
+    ]);
 
-    // Compile Tailwind CSS
+    // Compile Tailwind CSS (needs synced packages from above)
     print('\x1B[90m→\x1B[0m Compiling Tailwind CSS...');
-    final tailwindOk = await _compileTailwind(projectDir);
+    final tailwindOk = await DuxtTailwind.compile(projectDir);
     if (!tailwindOk) {
       print('  \x1B[33m!\x1B[0m Tailwind compilation skipped (tailwindcss not found)');
     }
 
-    // Kill stale build daemons that may be holding ports (scoped to this project)
-    print('\x1B[90m→\x1B[0m Cleaning up stale processes...');
-    await Process.run('pkill', ['-f', 'build_runner.*${projectDir.replaceAll('/', '\\/')}']);
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    // Generate routes
-    print('\x1B[90m→\x1B[0m Generating routes...');
-    await RouterGenerator.generate(projectDir);
-
     // Start file watcher for route generation
     print('\x1B[90m→\x1B[0m Starting file watcher...');
-    final watcher = DuxtWatcher(projectDir, onFileChange: (path) async {
-      if (path.contains('/pages/')) {
+    final watcher = DuxtWatcher(projectDir, onFileChange: (path, changeType) async {
+      if (path.contains('/pages/') && (changeType == ChangeType.ADD || changeType == ChangeType.REMOVE)) {
         print('\x1B[33m↻\x1B[0m Route change: $path');
         await RouterGenerator.generate(projectDir);
       }
@@ -162,7 +160,7 @@ class DevCommand extends Command<int> {
     // Start Tailwind in watch mode
     if (tailwindOk) {
       print('\x1B[90m→\x1B[0m Starting Tailwind watcher...');
-      tailwindProcess = await _startTailwindWatch(projectDir, verbose: verbose);
+      tailwindProcess = await DuxtTailwind.watch(projectDir, verbose: verbose);
     }
 
     // Start jaspr serve on internal port
@@ -646,157 +644,6 @@ class DevCommand extends Command<int> {
 </body>
 </html>
 ''';
-  }
-
-  /// Compile Tailwind CSS once
-  Future<bool> _compileTailwind(String projectDir) async {
-    final inputFile = File(p.join(projectDir, 'web', 'styles.tw.css'));
-    if (!inputFile.existsSync()) return false;
-
-    // Check if tailwindcss is available
-    final which = await Process.run('which', ['tailwindcss']);
-    if (which.exitCode != 0) {
-      // Try common locations
-      final home = Platform.environment['HOME'] ?? '';
-      final locations = [
-        '/usr/local/bin/tailwindcss',
-        '$home/.local/bin/tailwindcss',
-        'tailwindcss',
-      ];
-
-      bool found = false;
-      for (final loc in locations) {
-        if (File(loc).existsSync()) {
-          found = true;
-          break;
-        }
-      }
-      if (!found) return false;
-    }
-
-    final result = await Process.run(
-      'tailwindcss',
-      [
-        '--input', p.join(projectDir, 'web', 'styles.tw.css'),
-        '--output', p.join(projectDir, 'web', 'styles.css'),
-      ],
-      workingDirectory: projectDir,
-    );
-
-    if (result.exitCode == 0) {
-      print('  Compiled styles.css');
-      return true;
-    } else {
-      print('  \x1B[31mTailwind error:\x1B[0m ${result.stderr}');
-      return false;
-    }
-  }
-
-  /// Start Tailwind in watch mode
-  Future<Process?> _startTailwindWatch(String projectDir, {bool verbose = false}) async {
-    final process = await Process.start(
-      'tailwindcss',
-      [
-        '--input', p.join(projectDir, 'web', 'styles.tw.css'),
-        '--output', p.join(projectDir, 'web', 'styles.css'),
-        '--watch',
-      ],
-      workingDirectory: projectDir,
-    );
-
-    process.stdout.listen((data) {
-      final output = utf8.decode(data).trim();
-      if (output.isNotEmpty && !output.contains('tailwindcss v')) {
-        if (verbose) {
-          print('\x1B[35m[tw]\x1B[0m $output');
-        }
-        // Silently rebuild CSS in non-verbose mode
-      }
-    });
-    process.stderr.listen((data) {
-      final output = utf8.decode(data).trim();
-      if (output.isEmpty) return;
-
-      // In non-verbose mode, only show actual errors (not status messages)
-      final isStatusMsg = output.contains('Done in') || output.contains('tailwindcss v');
-      if (verbose) {
-        print('\x1B[31m[tw]\x1B[0m $output');
-      } else if (!isStatusMsg) {
-        // Only print if it looks like a real error
-        print('\x1B[31m[tw]\x1B[0m $output');
-      }
-    });
-
-    return process;
-  }
-
-  /// Sync duxt_ui package to .duxt/packages/ for Tailwind CSS scanning
-  Future<void> _syncPackages(String projectDir) async {
-    final packagesToSync = ['duxt_ui', 'duxt'];
-    final targetDir = Directory(p.join(projectDir, '.duxt', 'packages'));
-
-    // Read package_config.json to find package locations
-    final packageConfigFile = File(p.join(projectDir, '.dart_tool', 'package_config.json'));
-    if (!packageConfigFile.existsSync()) {
-      print('  \x1B[33m!\x1B[0m Run "dart pub get" first');
-      return;
-    }
-
-    final packageConfig = jsonDecode(await packageConfigFile.readAsString());
-    final packages = packageConfig['packages'] as List<dynamic>;
-
-    for (final pkgName in packagesToSync) {
-      final pkg = packages.firstWhere(
-        (p) => p['name'] == pkgName,
-        orElse: () => null,
-      );
-
-      if (pkg == null) continue;
-
-      String rootUri = pkg['rootUri'] as String;
-
-      // Resolve the path
-      String sourcePath;
-      if (rootUri.startsWith('file://')) {
-        sourcePath = Uri.parse(rootUri).toFilePath();
-      } else if (rootUri.startsWith('../')) {
-        // Relative path from .dart_tool/
-        sourcePath = p.normalize(p.join(projectDir, '.dart_tool', rootUri));
-      } else {
-        continue;
-      }
-
-      final sourceLib = Directory(p.join(sourcePath, 'lib'));
-      if (!sourceLib.existsSync()) continue;
-
-      final targetPkg = Directory(p.join(targetDir.path, pkgName));
-
-      // Remove existing and copy fresh
-      if (targetPkg.existsSync()) {
-        await targetPkg.delete(recursive: true);
-      }
-      await targetPkg.create(recursive: true);
-
-      // Copy lib directory contents
-      await _copyDirectory(sourceLib, targetPkg);
-
-      print('  Synced $pkgName');
-    }
-  }
-
-  /// Recursively copy a directory
-  Future<void> _copyDirectory(Directory source, Directory target) async {
-    await for (final entity in source.list(recursive: false)) {
-      final targetPath = p.join(target.path, p.basename(entity.path));
-
-      if (entity is Directory) {
-        final newDir = Directory(targetPath);
-        await newDir.create(recursive: true);
-        await _copyDirectory(entity, newDir);
-      } else if (entity is File) {
-        await entity.copy(targetPath);
-      }
-    }
   }
 
   /// Detect jaspr mode from pubspec.yaml

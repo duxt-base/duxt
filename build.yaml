@@ -1,0 +1,24 @@
+builders:
+  # Phase 1: Analyze each .dart file and classify components
+  analyze:
+    import: "package:duxt/src/compiler/duxt_builder.dart"
+    builder_factories: ["buildAnalyzer"]
+    build_extensions:
+      ".dart":
+        - ".duxt.json"
+    build_to: cache
+    auto_apply: root_package
+    runs_before:
+      - "duxt|manifest"
+
+  # Phase 2: Aggregate analysis into project manifest
+  manifest:
+    import: "package:duxt/src/compiler/duxt_builder.dart"
+    builder_factories: ["buildManifest"]
+    build_extensions:
+      "$lib$":
+        - "lib/.duxt/manifest.json"
+    build_to: cache
+    auto_apply: root_package
+    required_inputs:
+      - ".duxt.json"

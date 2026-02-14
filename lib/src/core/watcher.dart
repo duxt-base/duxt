@@ -3,10 +3,11 @@ import 'dart:io';
 import 'package:watcher/watcher.dart';
 import 'package:path/path.dart' as p;
 
-/// Watches project files for changes and triggers rebuilds
+/// Watches project files for changes and triggers rebuilds.
+/// Passes [ChangeType] so callers can distinguish add/remove from modify.
 class DuxtWatcher {
   final String projectDir;
-  final Future<void> Function(String path) onFileChange;
+  final Future<void> Function(String path, ChangeType changeType) onFileChange;
 
   final List<DirectoryWatcher> _watchers = [];
   final List<StreamSubscription> _subscriptions = [];
@@ -22,7 +23,7 @@ class DuxtWatcher {
 
       final subscription = watcher.events.listen((event) {
         if (event.path.endsWith('.dart') || event.path.endsWith('.md') || event.path.endsWith('.mdx')) {
-          _debounce(() => onFileChange(event.path));
+          _debounce(() => onFileChange(event.path, event.type));
         }
       });
 
@@ -39,7 +40,7 @@ class DuxtWatcher {
 
         final subscription = watcher.events.listen((event) {
           if (event.path.endsWith('.dart')) {
-            _debounce(() => onFileChange(event.path));
+            _debounce(() => onFileChange(event.path, event.type));
           }
         });
 

@@ -1,9 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:args/command_runner.dart';
-import 'package:path/path.dart' as p;
 import '../core/router_generator.dart';
 import '../core/builder.dart';
+import '../core/tailwind.dart';
+import '../core/package_sync.dart';
 import 'build_desktop_command.dart';
 
 /// Command to build for production
@@ -88,11 +88,11 @@ class BuildCommand extends Command<int> {
     try {
       // Sync packages for Tailwind
       print('\x1B[90m→\x1B[0m Syncing packages...');
-      await _syncPackages(projectDir);
+      await PackageSync.sync(projectDir);
 
       // Compile Tailwind CSS
       print('\x1B[90m→\x1B[0m Compiling Tailwind CSS...');
-      await _compileTailwind(projectDir);
+      await DuxtTailwind.compile(projectDir, minify: true);
 
       // Generate routes
       print('\x1B[90m→\x1B[0m Generating routes...');
@@ -147,93 +147,6 @@ class BuildCommand extends Command<int> {
       print('');
       print('\x1B[31m✗\x1B[0m Build failed: $e');
       return 1;
-    }
-  }
-
-  /// Compile Tailwind CSS
-  Future<void> _compileTailwind(String projectDir) async {
-    final inputFile = File(p.join(projectDir, 'web', 'styles.tw.css'));
-    if (!inputFile.existsSync()) {
-      print('  \x1B[33m!\x1B[0m No styles.tw.css found, skipping');
-      return;
-    }
-
-    final result = await Process.run(
-      'tailwindcss',
-      [
-        '--input', p.join(projectDir, 'web', 'styles.tw.css'),
-        '--output', p.join(projectDir, 'web', 'styles.css'),
-        '--minify',
-      ],
-      workingDirectory: projectDir,
-    );
-
-    if (result.exitCode == 0) {
-      print('  Compiled styles.css');
-    } else {
-      print('  \x1B[31mTailwind error:\x1B[0m ${result.stderr}');
-    }
-  }
-
-  /// Sync duxt_ui package to .duxt/packages/
-  Future<void> _syncPackages(String projectDir) async {
-    final packagesToSync = ['duxt_ui', 'duxt'];
-    final targetDir = Directory(p.join(projectDir, '.duxt', 'packages'));
-
-    final packageConfigFile = File(p.join(projectDir, '.dart_tool', 'package_config.json'));
-    if (!packageConfigFile.existsSync()) {
-      print('  \x1B[33m!\x1B[0m Run "dart pub get" first');
-      return;
-    }
-
-    final packageConfig = jsonDecode(await packageConfigFile.readAsString());
-    final packages = packageConfig['packages'] as List<dynamic>;
-
-    for (final pkgName in packagesToSync) {
-      final pkg = packages.firstWhere(
-        (p) => p['name'] == pkgName,
-        orElse: () => null,
-      );
-
-      if (pkg == null) continue;
-
-      String rootUri = pkg['rootUri'] as String;
-      String sourcePath;
-
-      if (rootUri.startsWith('file://')) {
-        sourcePath = Uri.parse(rootUri).toFilePath();
-      } else if (rootUri.startsWith('../')) {
-        sourcePath = p.normalize(p.join(projectDir, '.dart_tool', rootUri));
-      } else {
-        continue;
-      }
-
-      final sourceLib = Directory(p.join(sourcePath, 'lib'));
-      if (!sourceLib.existsSync()) continue;
-
-      final targetPkg = Directory(p.join(targetDir.path, pkgName));
-
-      if (targetPkg.existsSync()) {
-        await targetPkg.delete(recursive: true);
-      }
-      await targetPkg.create(recursive: true);
-
-      await _copyDirectory(sourceLib, targetPkg);
-      print('  Synced $pkgName');
-    }
-  }
-
-  Future<void> _copyDirectory(Directory source, Directory target) async {
-    await for (final entity in source.list(recursive: false)) {
-      final targetPath = p.join(target.path, p.basename(entity.path));
-
-      if (entity is Directory) {
-        final newDir = Directory(targetPath);
-        await newDir.create(recursive: true);
-        await _copyDirectory(entity, newDir);
-      } else if (entity is File) {
-        await entity.copy(targetPath);
-      }
     }
   }
 }

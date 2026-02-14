@@ -25,6 +25,9 @@ dependencies:
   jaspr_content: ^0.4.5
   jaspr_router: ^0.8.0
   markdown: ^7.3.0
+  build: ^2.4.0
+  analyzer: ^6.0.0
+  glob: ^2.1.0
 
 dev_dependencies:
   lints: ^6.1.0
