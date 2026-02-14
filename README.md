@@ -92,8 +92,11 @@ See all commands and options at [duxt.dev/duxt-cli](https://duxt.dev/duxt-cli).
 | Package | Description |
 |---------|-------------|
 | [duxt](https://pub.dev/packages/duxt) | CLI & runtime framework |
-| [duxt_ui](https://pub.dev/packages/duxt_ui) | Tailwind component library |
-| [duxt_orm](https://pub.dev/packages/duxt_orm) | SQLite ORM with migrations |
+| [duxt_html](https://pub.dev/packages/duxt_html) | Flutter-style HTML components for Jaspr (80+ typed components) |
+| [duxt_ui](https://pub.dev/packages/duxt_ui) | Beautiful, accessible UI components (50+) |
+| [duxt_orm](https://pub.dev/packages/duxt_orm) | ActiveRecord-style ORM — PostgreSQL, MySQL & SQLite |
+| [duxt_signals](https://pub.dev/packages/duxt_signals) | Reactive signals for lightweight state management |
+| [duxt_mcp](https://duxt.dev/duxt-mcp) | MCP server for AI tools (Claude Code, Cursor) |
 
 ---
 
