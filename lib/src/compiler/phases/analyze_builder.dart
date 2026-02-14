@@ -52,12 +52,10 @@ class AnalyzeBuilder implements Builder {
     );
 
     // Find all top-level classes
-    for (final unit in library.units) {
-      for (final cls in unit.classes) {
-        final componentInfo = _classifyComponent(cls, library);
-        if (componentInfo != null) {
-          analysis.components.add(componentInfo);
-        }
+    for (final cls in library.classes) {
+      final componentInfo = _classifyComponent(cls, library);
+      if (componentInfo != null) {
+        analysis.components.add(componentInfo);
       }
     }
 
@@ -83,7 +81,7 @@ class AnalyzeBuilder implements Builder {
 
     // Collect annotations
     final annotations = <String>{};
-    for (final annotation in cls.metadata) {
+    for (final annotation in cls.metadata.annotations) {
       final name = annotation.element?.displayName ?? '';
       if (name.isNotEmpty) annotations.add(name);
     }
@@ -95,10 +93,10 @@ class AnalyzeBuilder implements Builder {
     final params = <ParamInfo>[];
     final constructor = cls.unnamedConstructor;
     if (constructor != null) {
-      for (final param in constructor.parameters) {
+      for (final param in constructor.formalParameters) {
         params.add(ParamInfo(
-          name: param.name,
-          type: param.type.getDisplayString(withNullability: true),
+          name: param.name ?? '',
+          type: param.type.getDisplayString(),
           isRequired: param.isRequired,
           isNamed: param.isNamed,
         ));
@@ -106,8 +104,8 @@ class AnalyzeBuilder implements Builder {
     }
 
     return ComponentInfo(
-      name: cls.name,
-      import_: library.source.uri.toString(),
+      name: cls.name ?? '',
+      import_: library.uri.toString(),
       kind: kind,
       params: params,
       annotations: annotations,
@@ -133,7 +131,7 @@ class AnalyzeBuilder implements Builder {
     InterfaceType? current = cls.supertype;
     while (current != null) {
       final name = current.element.name;
-      if (componentTypes.contains(name)) return true;
+      if (name != null && componentTypes.contains(name)) return true;
 
       // Check if we've reached Object
       if (name == 'Object') break;
@@ -142,7 +140,8 @@ class AnalyzeBuilder implements Builder {
 
     // Also check mixins
     for (final mixin in cls.mixins) {
-      if (mixin.element.name.contains('Component')) return true;
+      final name = mixin.element.name;
+      if (name != null && name.contains('Component')) return true;
     }
 
     return false;
@@ -154,20 +153,20 @@ class AnalyzeBuilder implements Builder {
     Set<String> annotations,
     LibraryElement library,
   ) {
-    // @island → island boundary
+    // @island -> island boundary
     if (annotations.contains('island')) return ComponentKind.island;
 
-    // @client → interactive (Jaspr's own hydration)
+    // @client -> interactive (Jaspr's own hydration)
     if (annotations.contains('client')) return ComponentKind.interactive;
 
-    // Has AsyncDataMixin → dynamic data
+    // Has AsyncDataMixin -> dynamic data
     if (_hasAsyncData(cls)) return ComponentKind.dynamicData;
 
-    // Has @sync fields or stateful behavior → interactive
+    // Has @sync fields or stateful behavior -> interactive
     if (_hasState(cls)) return ComponentKind.interactive;
     if (_hasSyncFields(cls)) return ComponentKind.interactive;
 
-    // Uses browser APIs → interactive
+    // Uses browser APIs -> interactive
     if (_usesBrowserAPIs(library)) return ComponentKind.interactive;
 
     // Default: static (no client JS needed)
@@ -179,8 +178,9 @@ class AnalyzeBuilder implements Builder {
     // StatefulComponent subclasses are inherently stateful
     InterfaceType? current = cls.supertype;
     while (current != null) {
-      if (current.element.name == 'StatefulComponent') return true;
-      if (current.element.name == 'Object') break;
+      final name = current.element.name;
+      if (name == 'StatefulComponent') return true;
+      if (name == 'Object') break;
       current = current.element.supertype;
     }
     return false;
@@ -197,7 +197,7 @@ class AnalyzeBuilder implements Builder {
   /// Check for @sync annotated fields
   bool _hasSyncFields(ClassElement cls) {
     for (final field in cls.fields) {
-      for (final annotation in field.metadata) {
+      for (final annotation in field.metadata.annotations) {
         if (annotation.element?.displayName == 'sync') return true;
       }
     }
@@ -208,8 +208,8 @@ class AnalyzeBuilder implements Builder {
   bool _usesBrowserAPIs(LibraryElement library) {
     final browserPackages = {'dart:html', 'dart:js', 'package:web/'};
 
-    for (final import in library.libraryImports) {
-      final uri = import.importedLibrary?.source.uri.toString() ?? '';
+    for (final import in library.firstFragment.libraryImports) {
+      final uri = import.importedLibrary?.uri.toString() ?? '';
       if (browserPackages.any((pkg) => uri.startsWith(pkg))) return true;
     }
 
