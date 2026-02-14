@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1] - 2026-02-14
+
+### Fixed
+- Upgraded `analyzer` to `^10.0.2` and `build` to `^4.0.4` for full latest-version compatibility on pub.dev
+- Migrated `analyze_builder.dart` to analyzer v10 API (fragments, nullable names, `formalParameters`, `Metadata` wrapper)
+- Fixed doc comment angle brackets causing pub.dev static analysis warnings
+
 ## [0.6.0] - 2026-02-14
 
 ### Added
