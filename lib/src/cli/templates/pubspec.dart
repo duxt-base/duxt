@@ -75,21 +75,30 @@ class DuxtConfig {
 ''';
 
 /// Optimized build.yaml template
-/// - Scopes jaspr_builder to lib/ only (excludes server/, test/)
-/// - Disables jaspr_tailwind (Duxt handles CSS directly)
+/// - Scopes all jaspr_builder modules to lib/ only (excludes server/, test/)
 /// - Limits entrypoint builder to web/main.client.dart
 const buildYamlTemplate = '''
 targets:
   \$default:
     builders:
-      # Scope Jaspr builder to lib/ only — skip server/ and test/
-      jaspr_builder|jaspr:
+      # Scope Jaspr module builders to lib/ only — the heavy ones (3000+ inputs → ~100)
+      jaspr_builder|codec_module:
         generate_for:
           include:
             - lib/**/*.dart
           exclude:
-            - server/**
-            - test/**
+            - lib/.generated/**
+      jaspr_builder|styles_module:
+        generate_for:
+          include:
+            - lib/**/*.dart
+          exclude:
+            - lib/.generated/**
+      jaspr_builder|client_module:
+        generate_for:
+          include:
+            - lib/**/*.dart
+          exclude:
             - lib/.generated/**
 
       # Only compile the web entry point
@@ -98,10 +107,6 @@ targets:
           include:
             - web/main.client.dart
             - lib/main.client.dart
-
-      # Disable jaspr_tailwind — Duxt runs its own Tailwind CLI
-      jaspr_tailwind|compiler:
-        enabled: false
 ''';
 
 /// .gitignore template

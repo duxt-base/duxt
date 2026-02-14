@@ -83,6 +83,8 @@ class DevCommand extends Command<int> {
     print('\x1B[36m                     oooooooooooooooooooo\x1B[0m');
     print('');
 
+    final totalTimer = Stopwatch()..start();
+
     // Run pub get if needed
     final pubspecLock = File(p.join(projectDir, 'pubspec.lock'));
     final packageConfig = File(p.join(projectDir, '.dart_tool', 'package_config.json'));
@@ -98,18 +100,25 @@ class DevCommand extends Command<int> {
     }
 
     // Parallel startup: sync packages + generate routes + kill stale processes
+    final prepTimer = Stopwatch()..start();
     print('\x1B[90m→\x1B[0m Preparing project (parallel)...');
     await Future.wait([
       PackageSync.sync(projectDir),
       RouterGenerator.generate(projectDir),
       Process.run('pkill', ['-f', 'build_runner.*${projectDir.replaceAll('/', '\\/')}']),
     ]);
+    prepTimer.stop();
+    print('  \x1B[90m${prepTimer.elapsedMilliseconds}ms\x1B[0m');
 
     // Compile Tailwind CSS (needs synced packages from above)
+    final twTimer = Stopwatch()..start();
     print('\x1B[90m→\x1B[0m Compiling Tailwind CSS...');
     final tailwindOk = await DuxtTailwind.compile(projectDir);
+    twTimer.stop();
     if (!tailwindOk) {
       print('  \x1B[33m!\x1B[0m Tailwind compilation skipped (tailwindcss not found)');
+    } else {
+      print('  \x1B[90m${twTimer.elapsedMilliseconds}ms\x1B[0m');
     }
 
     // Start file watcher for route generation
@@ -241,6 +250,8 @@ class DevCommand extends Command<int> {
 
         // Signal ready when server is serving
         if (line.contains('Serving at') && !jasprReady.isCompleted) {
+          totalTimer.stop();
+          print('\x1B[32m✓\x1B[0m Server ready in \x1B[1m${(totalTimer.elapsedMilliseconds / 1000).toStringAsFixed(1)}s\x1B[0m');
           jasprReady.complete();
         }
       }

@@ -3,14 +3,14 @@ import 'package:duxt/src/cli/templates/pubspec.dart';
 
 void main() {
   group('buildYamlTemplate', () {
-    test('scopes jaspr_builder to lib/ only', () {
-      expect(buildYamlTemplate, contains('jaspr_builder|jaspr'));
+    test('scopes jaspr_builder module builders to lib/ only', () {
+      expect(buildYamlTemplate, contains('jaspr_builder|codec_module'));
+      expect(buildYamlTemplate, contains('jaspr_builder|styles_module'));
+      expect(buildYamlTemplate, contains('jaspr_builder|client_module'));
       expect(buildYamlTemplate, contains('lib/**/*.dart'));
     });
 
-    test('excludes server/ and test/ from jaspr_builder', () {
-      expect(buildYamlTemplate, contains('server/**'));
-      expect(buildYamlTemplate, contains('test/**'));
+    test('excludes generated files from jaspr_builder', () {
       expect(buildYamlTemplate, contains('lib/.generated/**'));
     });
 
@@ -18,11 +18,6 @@ void main() {
       expect(buildYamlTemplate, contains('build_web_compilers|entrypoint'));
       expect(buildYamlTemplate, contains('web/main.client.dart'));
       expect(buildYamlTemplate, contains('lib/main.client.dart'));
-    });
-
-    test('disables jaspr_tailwind', () {
-      expect(buildYamlTemplate, contains('jaspr_tailwind|compiler'));
-      expect(buildYamlTemplate, contains('enabled: false'));
     });
   });
 
