@@ -96,6 +96,7 @@ See all commands and options at [duxt.dev/duxt-cli](https://duxt.dev/duxt-cli).
 | [duxt_ui](https://pub.dev/packages/duxt_ui) | Beautiful, accessible UI components (50+) |
 | [duxt_orm](https://pub.dev/packages/duxt_orm) | ActiveRecord-style ORM — PostgreSQL, MySQL & SQLite |
 | [duxt_signals](https://pub.dev/packages/duxt_signals) | Reactive signals for lightweight state management |
+| [duxt_icons](https://pub.dev/packages/duxt_icons) | 200,000+ icons from Iconify — inline SVG for SSR |
 | [duxt_mcp](https://duxt.dev/duxt-mcp) | MCP server for AI tools (Claude Code, Cursor) |
 
 ---
