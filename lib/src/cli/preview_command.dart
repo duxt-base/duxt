@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
-import '../core/error_html.dart';
+import '../core/static_server.dart';
 
 /// Command to preview production build locally
 /// Usage: duxt preview [--port=4000] [--api-port=3001]
@@ -73,6 +73,7 @@ class PreviewCommand extends Command<int> {
 
     // Start frontend server
     print('\x1B[90m→\x1B[0m Starting frontend server...');
+    final staticServer = StaticFileServer(buildDir.path);
     final server = await HttpServer.bind(InternetAddress.anyIPv4, port);
 
     print('');
@@ -87,7 +88,7 @@ class PreviewCommand extends Command<int> {
     print('');
 
     // Handle requests
-    server.listen((request) => _handleRequest(request, buildDir.path));
+    server.listen((request) => staticServer.handleRequest(request));
 
     // Handle both SIGINT (Ctrl+C) and SIGTERM (kill)
     void shutdown() {
@@ -149,85 +150,5 @@ class PreviewCommand extends Command<int> {
     }
 
     return null;
-  }
-
-  Future<void> _handleRequest(HttpRequest request, String buildDir) async {
-    // Security headers on all responses
-    request.response.headers
-      ..set('X-Content-Type-Options', 'nosniff')
-      ..set('X-Frame-Options', 'DENY');
-
-    var path = request.uri.path;
-
-    // Default to index.html
-    if (path == '/' || path.isEmpty) {
-      path = '/index.html';
-    }
-
-    // Try to serve the file
-    var file = File('$buildDir$path');
-
-    // Path traversal protection: verify resolved path stays within buildDir
-    if (!_isWithinDir(file, buildDir)) {
-      request.response
-        ..statusCode = HttpStatus.forbidden
-        ..headers.contentType = ContentType.html
-        ..write(DuxtErrorHtml.notFound(path: request.uri.path));
-      await request.response.close();
-      return;
-    }
-
-    // If file doesn't exist and doesn't have extension, try .html
-    if (!file.existsSync() && !path.contains('.')) {
-      file = File('$buildDir$path.html');
-    }
-
-    // Try index.html in subdirectory
-    if (!file.existsSync() && !path.endsWith('.html')) {
-      file = File('$buildDir$path/index.html');
-    }
-
-    // For SPA routing, serve index.html for non-file routes
-    if (!file.existsSync()) {
-      file = File('$buildDir/index.html');
-    }
-
-    if (file.existsSync()) {
-      final contentType = _getContentType(file.path);
-      request.response
-        ..headers.contentType = contentType
-        ..add(await file.readAsBytes());
-    } else {
-      request.response
-        ..statusCode = HttpStatus.notFound
-        ..headers.contentType = ContentType.html
-        ..write(DuxtErrorHtml.notFound(path: request.uri.path));
-    }
-
-    await request.response.close();
-  }
-
-  /// Verify that a file path resolves to within the given directory.
-  bool _isWithinDir(File file, String dir) {
-    final canonicalDir = p.canonicalize(dir);
-    final canonicalFile = p.canonicalize(file.path);
-    return canonicalFile.startsWith(canonicalDir);
-  }
-
-  ContentType _getContentType(String path) {
-    if (path.endsWith('.html')) return ContentType.html;
-    if (path.endsWith('.css')) return ContentType('text', 'css');
-    if (path.endsWith('.js')) return ContentType('application', 'javascript');
-    if (path.endsWith('.json')) return ContentType.json;
-    if (path.endsWith('.png')) return ContentType('image', 'png');
-    if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return ContentType('image', 'jpeg');
-    if (path.endsWith('.gif')) return ContentType('image', 'gif');
-    if (path.endsWith('.svg')) return ContentType('image', 'svg+xml');
-    if (path.endsWith('.webp')) return ContentType('image', 'webp');
-    if (path.endsWith('.woff')) return ContentType('font', 'woff');
-    if (path.endsWith('.woff2')) return ContentType('font', 'woff2');
-    if (path.endsWith('.ttf')) return ContentType('font', 'ttf');
-    if (path.endsWith('.ico')) return ContentType('image', 'x-icon');
-    return ContentType.binary;
   }
 }
