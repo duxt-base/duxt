@@ -2,8 +2,8 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 import '../core/router_generator.dart';
 import '../core/builder.dart';
-import '../core/tailwind.dart';
 import '../core/package_sync.dart';
+import '../core/tailwind.dart';
 import 'build_desktop_command.dart';
 
 /// Command to build for production
@@ -16,7 +16,8 @@ class BuildCommand extends Command<int> {
   final name = 'build';
 
   @override
-  final description = 'Build for production (web by default, or "desktop" for Tauri)';
+  final description =
+      'Build for production (web by default, or "desktop" for Tauri)';
 
   @override
   String get invocation => 'duxt build [desktop] [options]';
@@ -31,11 +32,13 @@ class BuildCommand extends Command<int> {
     argParser.addOption(
       'target',
       abbr: 't',
-      help: 'Target platform (linux-x64, linux-arm64, macos-x64, macos-arm64, windows-x64)',
+      help:
+          'Target platform (linux-x64, linux-arm64, macos-x64, macos-arm64, windows-x64)',
     );
     argParser.addFlag(
       'all-targets',
-      help: 'Build for all supported targets (requires Docker for cross-compilation)',
+      help:
+          'Build for all supported targets (requires Docker for cross-compilation)',
       defaultsTo: false,
     );
     argParser.addFlag(
@@ -81,18 +84,44 @@ class BuildCommand extends Command<int> {
 
     print('');
     print('\x1B[36m╭─────────────────────────────────────╮\x1B[0m');
-    print('\x1B[36m│\x1B[0m  \x1B[1mDuxt\x1B[0m Production Build            \x1B[36m│\x1B[0m');
+    print(
+        '\x1B[36m│\x1B[0m  \x1B[1mDuxt\x1B[0m Production Build            \x1B[36m│\x1B[0m');
     print('\x1B[36m╰─────────────────────────────────────╯\x1B[0m');
     print('');
 
     try {
       // Sync packages for Tailwind
       print('\x1B[90m→\x1B[0m Syncing packages...');
-      await PackageSync.sync(projectDir);
+      final syncResult = await PackageSync.sync(projectDir);
+      if (!syncResult.packageConfigFound) {
+        print('  \x1B[33m!\x1B[0m Run "dart pub get" first');
+      } else {
+        for (final pkg in syncResult.syncedPackages) {
+          print('  Synced $pkg');
+        }
+      }
 
       // Compile Tailwind CSS
       print('\x1B[90m→\x1B[0m Compiling Tailwind CSS...');
-      await DuxtTailwind.compile(projectDir, minify: true);
+      final tailwindResult =
+          await DuxtTailwind.compile(projectDir, minify: true);
+      if (tailwindResult.ok) {
+        print('  Compiled styles.css');
+      } else {
+        switch (tailwindResult.reason) {
+          case TailwindFailureReason.noInputFile:
+            print('  \x1B[33m!\x1B[0m No styles.tw.css found, skipping');
+            break;
+          case TailwindFailureReason.binaryNotFound:
+            print('  \x1B[33m!\x1B[0m tailwindcss not found, skipping');
+            break;
+          case TailwindFailureReason.compileFailed:
+            print('  \x1B[31mTailwind error:\x1B[0m ${tailwindResult.stderr}');
+            break;
+          case null:
+            break;
+        }
+      }
 
       // Generate routes
       print('\x1B[90m→\x1B[0m Generating routes...');
@@ -100,7 +129,12 @@ class BuildCommand extends Command<int> {
 
       if (allTargets) {
         // Build for multiple targets
-        final targets = ['linux-x64', 'linux-arm64', 'macos-x64', 'macos-arm64'];
+        final targets = [
+          'linux-x64',
+          'linux-arm64',
+          'macos-x64',
+          'macos-arm64'
+        ];
         for (final t in targets) {
           print('');
           print('\x1B[90m→\x1B[0m Building for $t...');

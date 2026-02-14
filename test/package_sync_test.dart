@@ -17,8 +17,10 @@ void main() {
     });
 
     test('skips when no package_config.json exists', () async {
-      await PackageSync.sync(tempDir.path);
+      final result = await PackageSync.sync(tempDir.path);
 
+      expect(result.packageConfigFound, isFalse);
+      expect(result.syncedPackages, isEmpty);
       final targetDir = Directory(p.join(tempDir.path, '.duxt', 'packages'));
       expect(targetDir.existsSync(), isFalse);
     });
@@ -45,7 +47,10 @@ void main() {
         }),
       );
 
-      await PackageSync.sync(tempDir.path);
+      final result = await PackageSync.sync(tempDir.path);
+
+      expect(result.packageConfigFound, isTrue);
+      expect(result.syncedPackages, contains('duxt_ui'));
 
       final targetDir = Directory(p.join(tempDir.path, '.duxt', 'packages', 'duxt_ui'));
       expect(targetDir.existsSync(), isTrue);
@@ -79,7 +84,10 @@ void main() {
         }),
       );
 
-      await PackageSync.sync(tempDir.path);
+      final result = await PackageSync.sync(tempDir.path);
+
+      expect(result.packageConfigFound, isTrue);
+      expect(result.syncedPackages, contains('duxt'));
 
       final targetDir = Directory(p.join(tempDir.path, '.duxt', 'packages', 'duxt'));
       expect(targetDir.existsSync(), isTrue);
@@ -107,8 +115,10 @@ void main() {
         }),
       );
 
-      await PackageSync.sync(tempDir.path);
+      final result = await PackageSync.sync(tempDir.path);
 
+      expect(result.packageConfigFound, isTrue);
+      expect(result.syncedPackages, isEmpty);
       final targetDir = Directory(p.join(tempDir.path, '.duxt', 'packages', 'random_pkg'));
       expect(targetDir.existsSync(), isFalse);
     });

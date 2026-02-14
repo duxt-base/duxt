@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-02-14
+
+### Added
+- **`--perf` flag for `duxt dev`** — Print rebuild stage timings (save → build start → compile complete → reload complete) to diagnose slow rebuilds
+- **`--reload` flag for `duxt dev`** — Use Jaspr's module reload mode for faster hot reloads (experimental)
+- **`--open` flag for `duxt start`** — Open browser automatically after starting production server
+- **Auto port finding** — `duxt start` finds a free port automatically if none is specified
+
+### Changed
+- **Cross-platform Jaspr CLI resolver** — New `JasprCli` utility resolves the jaspr executable across platforms (PUB_CACHE, Windows, snapshot paths). Replaces fragile hardcoded path lookups in dev, build, and start commands.
+- **Smarter file watcher** — Batch dispatch with 100ms debounce. Change type awareness (add/remove/modify) prevents unnecessary route regeneration on file edits. Only structural changes (add/remove) trigger route regeneration.
+- **Structured PackageSync results** — `PackageSync.sync()` returns `PackageSyncResult` with `packageConfigFound` and `syncedPackages` for better diagnostics and error messages.
+- **Structured Tailwind results** — `Tailwind.compile()` returns `TailwindCompileResult` with differentiated failure reasons (`noInputFile`, `binaryNotFound`, `compileFailed`).
+- **Tailwind executable finder** — Multi-path search for `tailwindcss` binary (PATH, /usr/local/bin, homebrew, npm-global).
+- **Router skip-write optimization** — Route generator compares output before writing. If routes are unchanged, the file is not rewritten, preventing unnecessary build_runner rebuild cycles.
+- **HttpClient-based update checker** — `duxt update` uses Dart's `HttpClient` instead of shelling out to `curl`. Proper timeout handling and robust semver parsing.
+- **Better process lifecycle** — SIGTERM → SIGKILL escalation with 6-second timeout. Handles SIGINT, SIGTERM, and SIGHUP signals. Stale build_runner cleanup on startup.
+- **Stream buffering** — stdout/stderr parsing handles partial chunks with separate line buffers, preventing garbled output.
+
+### Fixed
+- Fixed potential race condition in dev tools WebSocket broadcast (defensive `.toList()` copy)
+- Fixed route regeneration triggering on `.generated/` directory changes
+- Improved handling of content and layout file changes in watcher
+
 ## [0.5.7] - 2026-02-11
 
 - fix version display in duxt update/version commands

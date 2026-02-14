@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:args/command_runner.dart';
+import '../core/jaspr_cli.dart';
 import '../core/router_generator.dart';
 import '../core/static_server.dart';
 
@@ -58,13 +59,13 @@ class StartCommand extends Command<int> {
       print('\x1B[90m→\x1B[0m No production build found, building...');
 
       // Find jaspr CLI
-      final home = Platform.environment['HOME'] ?? '';
-      final jasprCli = '$home/.pub-cache/bin/jaspr';
+      final jasprCommand = JasprCli.resolveCommand();
 
       final buildResult = await Process.run(
-        File(jasprCli).existsSync() ? jasprCli : 'jaspr',
+        jasprCommand,
         ['build'],
         workingDirectory: projectDir,
+        runInShell: JasprCli.shouldRunInShell(jasprCommand),
       );
       if (buildResult.exitCode != 0) {
         print('\x1B[31m✗\x1B[0m Build failed');

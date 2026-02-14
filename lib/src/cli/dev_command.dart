@@ -8,8 +8,8 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:yaml/yaml.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import '../core/jaspr_cli.dart';
 import '../core/router_generator.dart';
-import 'package:watcher/watcher.dart';
 import '../core/watcher.dart';
 import '../core/tailwind.dart';
 import '../core/package_sync.dart';
@@ -32,7 +32,8 @@ class DevCommand extends Command<int> {
       'port',
       abbr: 'p',
       defaultsTo: '4000',
-      help: 'Base port (api=+1, jaspr=+2, webdev=+3, jaspr-proxy=+4). Use different ports to run multiple apps.',
+      help:
+          'Base port (api=+1, jaspr=+2, webdev=+3, jaspr-proxy=+4). Use different ports to run multiple apps.',
     );
     argParser.addFlag(
       'no-api',
@@ -44,6 +45,17 @@ class DevCommand extends Command<int> {
       abbr: 'v',
       defaultsTo: false,
       help: 'Show detailed build output',
+    );
+    argParser.addFlag(
+      'perf',
+      defaultsTo: false,
+      help: 'Print rebuild stage timings (save->build->reload)',
+    );
+    argParser.addFlag(
+      'reload',
+      defaultsTo: false,
+      help:
+          'Use module reload mode for jaspr serve (faster but can be less stable).',
     );
     argParser.addFlag(
       'desktop',
@@ -61,25 +73,42 @@ class DevCommand extends Command<int> {
     final jasprProxyPort = (port + 4).toString();
     final noApi = argResults!['no-api'] as bool;
     final verbose = argResults!['verbose'] as bool;
+    final perf = argResults!['perf'] as bool;
+    final reload = argResults!['reload'] as bool;
     final desktop = argResults!['desktop'] as bool;
     final projectDir = Directory.current.path;
+    final jasprMode = reload ? 'reload' : 'refresh';
+    final perfTracer = _RebuildPerfTracer(
+      enabled: perf || verbose,
+      projectDir: projectDir,
+    );
 
     // Check if this is a Duxt project
     if (!File('$projectDir/duxt.config.dart').existsSync() &&
         !Directory('$projectDir/lib').existsSync()) {
-      print('Error: Not a Duxt project. Run this command in a Duxt project directory.');
+      print(
+        'Error: Not a Duxt project. Run this command in a Duxt project directory.',
+      );
       return 1;
     }
 
     print('');
     print('\x1B[36m               88\x1B[0m');
     print('\x1B[36m               88\x1B[0m');
-    print('\x1B[36m      .d88888b 88  db       db  db        db d88888888b\x1B[0m');
-    print('\x1B[36m    .8P       Y88  88       88   `8b    d8\'      88\x1B[0m');
-    print('\x1B[36m    88         88  88       88     `8bd8\'        88\x1B[0m');
+    print(
+      '\x1B[36m      .d88888b 88  db       db  db        db d88888888b\x1B[0m',
+    );
+    print(
+      '\x1B[36m    .8P       Y88  88       88   `8b    d8\'      88\x1B[0m',
+    );
+    print(
+      '\x1B[36m    88         88  88       88     `8bd8\'        88\x1B[0m',
+    );
     print('\x1B[36m    88         88  88       88     .dPYb.        88\x1B[0m');
     print('\x1B[36m    `8L       d89  88b     d88   .8P    Y8.      88\x1B[0m');
-    print('\x1B[36m     `Y888888P8J    ~Y88888\'88  dP        Yb     `Y88P\x1B[0m');
+    print(
+      '\x1B[36m     `Y888888P8J    ~Y88888\'88  dP        Yb     `Y88P\x1B[0m',
+    );
     print('');
     print('\x1B[36m                     oooooooooooooooooooo\x1B[0m');
     print('');
@@ -88,10 +117,14 @@ class DevCommand extends Command<int> {
 
     // Run pub get if needed
     final pubspecLock = File(p.join(projectDir, 'pubspec.lock'));
-    final packageConfig = File(p.join(projectDir, '.dart_tool', 'package_config.json'));
+    final packageConfig = File(
+      p.join(projectDir, '.dart_tool', 'package_config.json'),
+    );
     if (!pubspecLock.existsSync() || !packageConfig.existsSync()) {
       print('\x1B[90m→\x1B[0m Installing dependencies...');
-      final result = await Process.run('dart', ['pub', 'get'], workingDirectory: projectDir);
+      final result = await Process.run(
+          'dart', ['pub', 'get'],
+          workingDirectory: projectDir);
       if (result.exitCode != 0) {
         print('\x1B[31m✗\x1B[0m Failed to install dependencies');
         print(result.stderr);
@@ -100,28 +133,50 @@ class DevCommand extends Command<int> {
       print('  Done');
     }
 
-    // Parallel startup: sync packages + generate routes + kill stale processes
-    final prepTimer = Stopwatch()..start();
-    print('\x1B[90m→\x1B[0m Preparing project (parallel)...');
-    await Future.wait([
-      PackageSync.sync(projectDir),
-      RouterGenerator.generate(projectDir),
-      // Kill stale processes on all ports we'll use (orphans from previous runs)
-      _killStaleProcesses(port, projectDir),
-    ]);
-    prepTimer.stop();
-    print('  \x1B[90m${prepTimer.elapsedMilliseconds}ms\x1B[0m');
+    // Sync duxt_ui package for Tailwind scanning
+    print('\x1B[90m→\x1B[0m Syncing packages...');
+    final syncResult = await PackageSync.sync(projectDir);
+    if (!syncResult.packageConfigFound) {
+      print('  \x1B[33m!\x1B[0m Run "dart pub get" first');
+    } else {
+      for (final pkg in syncResult.syncedPackages) {
+        print('  Synced $pkg');
+      }
+    }
 
-    // Compile Tailwind CSS (needs synced packages from above)
+    // Compile Tailwind CSS
     final twTimer = Stopwatch()..start();
     print('\x1B[90m→\x1B[0m Compiling Tailwind CSS...');
-    final tailwindOk = await DuxtTailwind.compile(projectDir);
+    final tailwindResult = await DuxtTailwind.compile(projectDir);
+    final tailwindOk = tailwindResult.ok;
     twTimer.stop();
-    if (!tailwindOk) {
-      print('  \x1B[33m!\x1B[0m Tailwind compilation skipped (tailwindcss not found)');
+    if (tailwindResult.ok) {
+      print('  Compiled styles.css \x1B[90m${twTimer.elapsedMilliseconds}ms\x1B[0m');
     } else {
-      print('  \x1B[90m${twTimer.elapsedMilliseconds}ms\x1B[0m');
+      switch (tailwindResult.reason) {
+        case TailwindFailureReason.noInputFile:
+          print('  \x1B[90mNo styles.tw.css found, skipping\x1B[0m');
+          break;
+        case TailwindFailureReason.binaryNotFound:
+          print(
+            '  \x1B[33m!\x1B[0m Tailwind compilation skipped (tailwindcss not found)',
+          );
+          break;
+        case TailwindFailureReason.compileFailed:
+          print('  \x1B[31mTailwind error:\x1B[0m ${tailwindResult.stderr}');
+          break;
+        case null:
+          break;
+      }
     }
+
+    // Kill stale build daemons that may be holding ports (scoped to this project)
+    print('\x1B[90m→\x1B[0m Cleaning up stale processes...');
+    await _cleanupStaleBuildRunners(projectDir, verbose: verbose);
+
+    // Generate routes
+    print('\x1B[90m→\x1B[0m Generating routes...');
+    await RouterGenerator.generate(projectDir);
 
     Process? apiProcess;
     Process? jasprProcess;
@@ -131,20 +186,33 @@ class DevCommand extends Command<int> {
 
     // Start file watcher for route generation and content hot reload
     print('\x1B[90m→\x1B[0m Starting file watcher...');
-    final watcher = DuxtWatcher(projectDir, onFileChange: (path, changeType) async {
-      // Content-only hot reload: markdown/yaml changes skip build_runner entirely
-      if (path.contains('/content/') &&
-          (path.endsWith('.md') || path.endsWith('.mdx') || path.endsWith('.yaml') || path.endsWith('.json'))) {
-        final relativePath = p.relative(path, from: projectDir);
-        print('\x1B[36m↻\x1B[0m Content updated: $relativePath');
-        devTools.broadcast('reload', 'Content Updated', details: relativePath);
-        return;
-      }
-      if (path.contains('/pages/') && (changeType == ChangeType.ADD || changeType == ChangeType.REMOVE)) {
-        print('\x1B[33m↻\x1B[0m Route change: $path');
-        await RouterGenerator.generate(projectDir);
-      }
-    });
+    final watcher = DuxtWatcher(
+      projectDir,
+      onFileChange: (path, changeType) async {
+        perfTracer.onSourceChange(path);
+
+        // Content-only hot reload: markdown/yaml changes skip build_runner entirely
+        if (path.contains('/content/') &&
+            (path.endsWith('.md') || path.endsWith('.mdx') ||
+             path.endsWith('.yaml') || path.endsWith('.json'))) {
+          final relativePath = p.relative(path, from: projectDir);
+          print('\x1B[36m↻\x1B[0m Content updated: $relativePath');
+          devTools.broadcast('reload', 'Content Updated', details: relativePath);
+          return;
+        }
+
+        if (_shouldRegenerateRoutes(path, changeType)) {
+          print('\x1B[33m↻\x1B[0m Route change: $path');
+          final routeGenStopwatch = Stopwatch()..start();
+          await RouterGenerator.generate(projectDir);
+          routeGenStopwatch.stop();
+          perfTracer.onRouteGenerationComplete(
+            path,
+            routeGenStopwatch.elapsed,
+          );
+        }
+      },
+    );
     await watcher.start();
 
     final hasApi = !noApi && File('$projectDir/server/main.dart').existsSync();
@@ -184,6 +252,9 @@ class DevCommand extends Command<int> {
 
     // Start jaspr serve on internal port
     print('\x1B[90m→\x1B[0m Starting Jaspr server on port $jasprPort...');
+    print(
+      '  \x1B[90mJaspr mode: $jasprMode${reload ? ' (module reload)' : ' (full refresh)'}\x1B[0m',
+    );
 
     // Check if this is a fresh build (no .dart_tool/build exists)
     final buildDir = Directory(p.join(projectDir, '.dart_tool', 'build'));
@@ -196,9 +267,16 @@ class DevCommand extends Command<int> {
     }
 
     // Check for local jaspr first (for development), then fall back to global
-    final home = Platform.environment['HOME'] ?? '';
-    final localJasprBin = p.join(p.dirname(projectDir), 'jaspr', 'packages', 'jaspr_cli', 'bin', 'jaspr.dart');
-    final globalJasprPath = '$home/.pub-cache/bin/jaspr';
+    final localJasprBin = p.join(
+      p.dirname(projectDir),
+      'jaspr',
+      'packages',
+      'jaspr_cli',
+      'bin',
+      'jaspr.dart',
+    );
+    final globalJasprPath = JasprCli.globalPath();
+    var globalJasprSnapshot = JasprCli.globalSnapshotPath();
 
     String jasprCmd;
     List<String> jasprArgs;
@@ -207,21 +285,63 @@ class DevCommand extends Command<int> {
       // Use local jaspr via dart run
       print('  \x1B[90mUsing local jaspr\x1B[0m');
       jasprCmd = 'dart';
-      jasprArgs = ['run', localJasprBin, 'serve', '--port', jasprPort.toString(), '--web-port', webdevPort, '--proxy-port', jasprProxyPort];
+      jasprArgs = [
+        'run',
+        localJasprBin,
+        'serve',
+        '--mode',
+        jasprMode,
+        '--port',
+        jasprPort.toString(),
+        '--web-port',
+        webdevPort,
+        '--proxy-port',
+        jasprProxyPort,
+      ];
     } else {
       // Use global jaspr
-      if (!File(globalJasprPath).existsSync()) {
+      if (!File(globalJasprPath).existsSync() && globalJasprSnapshot == null) {
         print('\x1B[33m!\x1B[0m jaspr_cli not found, installing...');
         await Process.run('dart', ['pub', 'global', 'activate', 'jaspr_cli']);
+        globalJasprSnapshot = JasprCli.globalSnapshotPath();
       }
-      jasprCmd = globalJasprPath;
-      jasprArgs = ['serve', '--port', jasprPort.toString(), '--web-port', webdevPort, '--proxy-port', jasprProxyPort];
+
+      if (globalJasprSnapshot != null) {
+        print('  \x1B[90mUsing global jaspr snapshot\x1B[0m');
+        jasprCmd = 'dart';
+        jasprArgs = [
+          globalJasprSnapshot,
+          'serve',
+          '--mode',
+          jasprMode,
+          '--port',
+          jasprPort.toString(),
+          '--web-port',
+          webdevPort,
+          '--proxy-port',
+          jasprProxyPort,
+        ];
+      } else {
+        jasprCmd = JasprCli.resolveCommand();
+        jasprArgs = [
+          'serve',
+          '--mode',
+          jasprMode,
+          '--port',
+          jasprPort.toString(),
+          '--web-port',
+          webdevPort,
+          '--proxy-port',
+          jasprProxyPort,
+        ];
+      }
     }
 
     jasprProcess = await Process.start(
       jasprCmd,
       jasprArgs,
       workingDirectory: projectDir,
+      runInShell: JasprCli.shouldRunInShell(jasprCmd),
     );
 
     // Track build state for spinner and ready state
@@ -232,73 +352,123 @@ class DevCommand extends Command<int> {
     Stopwatch? rebuildTimer;
     BuildEventClient? buildEventClient;
 
-    jasprProcess.stdout.listen((data) {
-      final output = utf8.decode(data).trim();
-      // Split on both \n and \r — Jaspr's spinner uses \r for in-place updates,
-      // so build start/end messages can merge into one "line" if only split by \n
-      for (final line in output.split(RegExp(r'[\n\r]+'))) {
-        if (line.trim().isEmpty) continue;
+    void handleJasprLine(String rawLine, {required bool fromStderr}) {
+      final line = rawLine.trim();
+      if (line.isEmpty) return;
 
-        if (verbose) {
-          print('\x1B[34m[web]\x1B[0m $line');
-        }
+      final isBuildStartMarker = !fromStderr &&
+          (line.contains('Rebuilding web assets') ||
+              line.contains('Building web assets') ||
+              line.contains('About to build'));
+      final isCompileDoneMarker =
+          !fromStderr && line.contains('Built with build_runner/jit');
+      final isReloadDoneMarker = !fromStderr &&
+          (line.contains('Rebuilt web assets') ||
+              line.contains('Done building web assets') ||
+              line.contains('Server application reloaded'));
 
-        // Once daemon events are active, only handle errors and ready signal from stdout
-        if (!useDaemonEvents) {
-          if (line.contains('Rebuilding web assets') || line.contains('Building web assets') || line.contains('About to build')) {
-            if (!isBuilding) {
-              isBuilding = true;
-              rebuildTimer = Stopwatch()..start();
-              if (!verbose) buildSpinner.start();
-              devTools.broadcast('building', 'Building...', details: 'Compiling web assets');
-            }
-          } else if (line.contains('Rebuilt web assets') || line.contains('Done building web assets') || line.contains('Server application reloaded')) {
-            if (isBuilding) {
-              rebuildTimer?.stop();
-              final ms = rebuildTimer?.elapsedMilliseconds ?? 0;
-              if (!verbose) buildSpinner.stop();
-              isBuilding = false;
-              print('\x1B[32m↻\x1B[0m Rebuilt in \x1B[1m${ms}ms\x1B[0m');
-              devTools.broadcast('reload', 'Hot Reloaded', details: '${ms}ms');
-            }
+      if (!fromStderr && verbose) {
+        print('\x1B[34m[web]\x1B[0m $line');
+      }
+
+      // Once daemon events are active, only handle errors and ready signal from stdout
+      if (!useDaemonEvents) {
+        if (isBuildStartMarker) {
+          if (!isBuilding) {
+            isBuilding = true;
+            rebuildTimer = Stopwatch()..start();
+            perfTracer.onBuildStarted(line);
+            if (!verbose) buildSpinner.start();
+            devTools.broadcast(
+              'building',
+              'Building...',
+              details: 'Compiling web assets',
+            );
+          }
+        } else if (isReloadDoneMarker) {
+          perfTracer.onReloadCompleted(line);
+          if (isBuilding) {
+            rebuildTimer?.stop();
+            final ms = rebuildTimer?.elapsedMilliseconds ?? 0;
+            if (!verbose) buildSpinner.stop();
+            isBuilding = false;
+            print('\x1B[32m↻\x1B[0m Rebuilt in \x1B[1m${ms}ms\x1B[0m');
+            devTools.broadcast('reload', 'Hot Reloaded', details: '${ms}ms');
           }
         }
-
-        if (line.contains('[ERROR]') || (line.contains('Error') && !line.contains('no-op'))) {
-          if (!verbose) buildSpinner.stop();
-          isBuilding = false;
-          print('\x1B[31m[web]\x1B[0m $line');
-          devTools.broadcast('error', 'Build Error', details: line.length > 80 ? '${line.substring(0, 80)}...' : line);
-        }
-
-        // Signal ready when server is serving
-        if (line.contains('Serving at') && !jasprReady.isCompleted) {
-          totalTimer.stop();
-          print('\x1B[32m✓\x1B[0m Server ready in \x1B[1m${(totalTimer.elapsedMilliseconds / 1000).toStringAsFixed(1)}s\x1B[0m');
-          jasprReady.complete();
-        }
       }
-    });
-    jasprProcess.stderr.listen((data) {
-      final output = utf8.decode(data).trim();
-      for (final line in output.split('\n')) {
-        if (line.trim().isEmpty) continue;
-        // Always show errors
-        if (line.contains('[ERROR]') || verbose) {
-          buildSpinner.stop();
-          isBuilding = false;
-          print('\x1B[31m[web]\x1B[0m $line');
-          devTools.broadcast('error', 'Error', details: line.length > 80 ? '${line.substring(0, 80)}...' : line);
-        }
+
+      if (isCompileDoneMarker) {
+        perfTracer.onCompileCompleted(line);
       }
-    });
+
+      if (line.contains('[ERROR]') ||
+          (line.contains('Error') && !line.contains('no-op'))) {
+        perfTracer.onBuildError(line);
+        if (!verbose) buildSpinner.stop();
+        isBuilding = false;
+        print('\x1B[31m[web]\x1B[0m $line');
+        devTools.broadcast(
+          'error',
+          fromStderr ? 'Error' : 'Build Error',
+          details: line.length > 80 ? '${line.substring(0, 80)}...' : line,
+        );
+      } else if (fromStderr && verbose) {
+        print('\x1B[31m[web]\x1B[0m $line');
+      }
+
+      // Signal ready when server is serving
+      if (!jasprReady.isCompleted &&
+          (line.contains('Serving at') ||
+              line.contains('✓ [CLI] Server started.') ||
+              line.contains('✓ Ready!') ||
+              line == 'Ready!')) {
+        totalTimer.stop();
+        print('\x1B[32m✓\x1B[0m Server ready in \x1B[1m${(totalTimer.elapsedMilliseconds / 1000).toStringAsFixed(1)}s\x1B[0m');
+        jasprReady.complete();
+      }
+    }
+
+    // Stream buffering: accumulate partial lines across chunks
+    var stdoutBuffer = '';
+    var stderrBuffer = '';
+
+    void parseChunk(
+      String chunk, {
+      required bool fromStderr,
+    }) {
+      final normalized = chunk.replaceAll('\r', '\n');
+      final currentBuffer = fromStderr ? stderrBuffer : stdoutBuffer;
+      final combined = '$currentBuffer$normalized';
+      final parts = combined.split('\n');
+      final trailing = parts.removeLast();
+
+      if (fromStderr) {
+        stderrBuffer = trailing;
+      } else {
+        stdoutBuffer = trailing;
+      }
+
+      for (final line in parts) {
+        handleJasprLine(line, fromStderr: fromStderr);
+      }
+    }
+
+    jasprProcess.stdout
+        .transform(utf8.decoder)
+        .listen((chunk) => parseChunk(chunk, fromStderr: false));
+    jasprProcess.stderr
+        .transform(utf8.decoder)
+        .listen((chunk) => parseChunk(chunk, fromStderr: true));
 
     // Wait for Jaspr to actually be ready (with timeout fallback)
     await jasprReady.future.timeout(
       const Duration(seconds: 180),
       onTimeout: () {
         print('\x1B[33m!\x1B[0m Build taking longer than expected...');
-        print('  \x1B[90mFirst builds can take 2-3 minutes. Run with --verbose for details.\x1B[0m');
+        print(
+          '  \x1B[90mFirst builds can take 2-3 minutes. Run with --verbose for details.\x1B[0m',
+        );
       },
     );
 
@@ -317,10 +487,12 @@ class DevCommand extends Command<int> {
             if (!isBuilding) {
               isBuilding = true;
               rebuildTimer = Stopwatch()..start();
+              perfTracer.onBuildStarted('daemon:started');
               if (!verbose) buildSpinner.start();
               devTools.broadcast('building', 'Building...', details: 'Compiling web assets');
             }
           case BuildEventType.succeeded:
+            perfTracer.onReloadCompleted('daemon:succeeded');
             if (isBuilding) {
               rebuildTimer?.stop();
               final ms = rebuildTimer?.elapsedMilliseconds ?? 0;
@@ -330,6 +502,7 @@ class DevCommand extends Command<int> {
               devTools.broadcast('reload', 'Hot Reloaded', details: '${ms}ms');
             }
           case BuildEventType.failed:
+            perfTracer.onBuildError(error ?? 'Build failed');
             rebuildTimer?.stop();
             if (!verbose) buildSpinner.stop();
             isBuilding = false;
@@ -354,18 +527,21 @@ class DevCommand extends Command<int> {
     }
 
     // Start proxy server on main port (also serves DevTools WebSocket at /_duxt/ws)
-    final wsHandler = webSocketHandler((WebSocketChannel webSocket, String? subprotocol) {
+    final wsHandler = webSocketHandler((
+      WebSocketChannel webSocket,
+      String? subprotocol,
+    ) {
       devTools.addClient(webSocket);
     });
 
     final handler = const shelf.Pipeline()
         .addMiddleware(_corsMiddleware())
         .addHandler((request) {
-          if (request.url.path == '_duxt/ws') {
-            return wsHandler(request);
-          }
-          return _proxyHandler(request, apiPort, jasprPort, hasApi, port);
-        });
+      if (request.url.path == '_duxt/ws') {
+        return wsHandler(request);
+      }
+      return _proxyHandler(request, apiPort, jasprPort, hasApi, port);
+    });
 
     proxyServer = await shelf_io.serve(handler, 'localhost', port);
 
@@ -378,7 +554,9 @@ class DevCommand extends Command<int> {
     print('');
     print('  \x1B[1mApp:\x1B[0m    \x1B[36mhttp://localhost:$port\x1B[0m');
     if (hasApi) {
-      print('  \x1B[1mAPI:\x1B[0m    \x1B[36mhttp://localhost:$port/api\x1B[0m');
+      print(
+        '  \x1B[1mAPI:\x1B[0m    \x1B[36mhttp://localhost:$port/api\x1B[0m',
+      );
     }
     print('  \x1B[1mMode:\x1B[0m   $modeColor$modeLabel\x1B[0m');
     print('');
@@ -399,49 +577,90 @@ class DevCommand extends Command<int> {
       tauriProcess = await _launchTauriDev(projectDir, port, verbose: verbose);
     }
 
-    // Keep running until interrupted (handle both SIGINT and SIGTERM)
-    void shutdown() {
-      print('');
-      print('\x1B[90mShutting down...\x1B[0m');
+    // Keep running until interrupted (Ctrl+C) or terminated externally.
+    await _waitForShutdownSignal();
 
-      buildEventClient?.close();
-      tauriProcess?.kill();
-      proxyServer?.close();
-      devTools.close();
-      watcher.stop();
-      tailwindProcess?.kill();
-      apiProcess?.kill();
-      jasprProcess?.kill();
-    }
+    print('');
+    print('\x1B[90mShutting down...\x1B[0m');
 
-    // SIGTERM is sent by `kill` command (default signal)
-    ProcessSignal.sigterm.watch().listen((_) {
-      shutdown();
-      exit(0);
-    });
-
-    await ProcessSignal.sigint.watch().first;
-    shutdown();
+    await buildEventClient.close();
+    await _terminateProcess(tauriProcess);
+    await proxyServer.close();
+    devTools.close();
+    await watcher.stop();
+    await _terminateProcess(tailwindProcess);
+    await _terminateProcess(apiProcess);
+    await _terminateProcess(jasprProcess);
 
     return 0;
   }
 
+  Future<void> _waitForShutdownSignal() async {
+    final signalFutures = <Future<ProcessSignal>>[
+      ProcessSignal.sigint.watch().first,
+    ];
+
+    if (Platform.isMacOS || Platform.isLinux) {
+      signalFutures.add(ProcessSignal.sigterm.watch().first);
+      signalFutures.add(ProcessSignal.sighup.watch().first);
+    }
+
+    await Future.any(signalFutures);
+  }
+
+  Future<void> _terminateProcess(
+    Process? process, {
+    Duration timeout = const Duration(seconds: 6),
+  }) async {
+    if (process == null) return;
+
+    if (Platform.isWindows) {
+      process.kill();
+      try {
+        await process.exitCode.timeout(timeout);
+      } on TimeoutException {
+        process.kill();
+      }
+      return;
+    }
+
+    process.kill(ProcessSignal.sigterm);
+    try {
+      await process.exitCode.timeout(timeout);
+    } on TimeoutException {
+      process.kill(ProcessSignal.sigkill);
+      try {
+        await process.exitCode.timeout(const Duration(seconds: 2));
+      } on TimeoutException {
+        // Best effort shutdown.
+      }
+    }
+  }
+
   /// Launch Tauri in dev mode, pointing at the jaspr dev server
-  Future<Process?> _launchTauriDev(String projectDir, int port, {bool verbose = false}) async {
+  Future<Process?> _launchTauriDev(
+    String projectDir,
+    int port, {
+    bool verbose = false,
+  }) async {
     // Scaffold src-tauri/ if missing
     final tauriDir = Directory(p.join(projectDir, 'src-tauri'));
     if (!tauriDir.existsSync()) {
       print('\x1B[90m→\x1B[0m Scaffolding Tauri project...');
       final pubspec = File(p.join(projectDir, 'pubspec.yaml'));
       final content = await pubspec.readAsString();
-      final nameMatch = RegExp(r'^name:\s*(.+)$', multiLine: true).firstMatch(content);
+      final nameMatch = RegExp(
+        r'^name:\s*(.+)$',
+        multiLine: true,
+      ).firstMatch(content);
       final projectName = nameMatch?.group(1)?.trim() ?? 'duxt_app';
       await TauriScaffold.scaffold(projectDir, projectName);
     }
 
     // Set devUrl in tauri.conf.json so Tauri points at the dev server
     final confFile = File(p.join(projectDir, 'src-tauri', 'tauri.conf.json'));
-    final conf = jsonDecode(await confFile.readAsString()) as Map<String, dynamic>;
+    final conf =
+        jsonDecode(await confFile.readAsString()) as Map<String, dynamic>;
     final build = (conf['build'] as Map<String, dynamic>?) ?? {};
     build['devUrl'] = 'http://localhost:$port';
     conf['build'] = build;
@@ -452,11 +671,25 @@ class DevCommand extends Command<int> {
     final client = HttpClient();
     for (var i = 0; i < 120; i++) {
       try {
-        final req = await client.getUrl(Uri.parse('http://localhost:$port/main.client.dart.js'));
-        final res = await req.close();
-        await res.drain();
-        if (res.statusCode == 200) {
+        final jsReq = await client.getUrl(
+          Uri.parse('http://localhost:$port/main.client.dart.js'),
+        );
+        final jsRes = await jsReq.close();
+        await jsRes.drain();
+
+        if (jsRes.statusCode == 200) {
           print('  Web assets ready');
+          break;
+        }
+
+        // Some SSR pages can be served without a client bundle.
+        final htmlReq =
+            await client.getUrl(Uri.parse('http://localhost:$port/'));
+        final htmlRes = await htmlReq.close();
+        final html = await utf8.decoder.bind(htmlRes).join();
+        final isLoadingPage = html.contains('name="duxt-loading" content="1"');
+        if (htmlRes.statusCode == 200 && !isLoadingPage) {
+          print('  App server ready');
           break;
         }
       } catch (_) {}
@@ -467,10 +700,8 @@ class DevCommand extends Command<int> {
     print('\x1B[90m→\x1B[0m Launching Tauri desktop window...');
 
     final process = await Process.start(
-      'cargo',
-      ['tauri', 'dev'],
-      workingDirectory: projectDir,
-    );
+        'cargo', ['tauri', 'dev'],
+        workingDirectory: projectDir);
 
     process.stdout.listen((data) {
       final output = utf8.decode(data).trim();
@@ -485,7 +716,9 @@ class DevCommand extends Command<int> {
       for (final line in output.split('\n')) {
         if (line.trim().isEmpty) continue;
         // Filter cargo compile progress noise
-        if (line.contains('Compiling') || line.contains('Downloading') || line.contains('Updating')) {
+        if (line.contains('Compiling') ||
+            line.contains('Downloading') ||
+            line.contains('Updating')) {
           if (verbose) print('\x1B[90m[desktop]\x1B[0m $line');
         } else {
           print('\x1B[36m[desktop]\x1B[0m $line');
@@ -501,7 +734,8 @@ class DevCommand extends Command<int> {
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
-      'Access-Control-Allow-Headers': 'Origin, Content-Type, Accept, Authorization',
+      'Access-Control-Allow-Headers':
+          'Origin, Content-Type, Accept, Authorization',
     };
 
     return (shelf.Handler innerHandler) {
@@ -515,22 +749,44 @@ class DevCommand extends Command<int> {
     };
   }
 
-  /// Kill stale processes on ports from a previous run that wasn't cleaned up
-  Future<void> _killStaleProcesses(int basePort, String projectDir) async {
-    final ports = [basePort, basePort + 1, basePort + 2, basePort + 3, basePort + 4];
-    for (final p in ports) {
-      final result = await Process.run('lsof', ['-ti:$p']);
-      if (result.stdout.toString().trim().isNotEmpty) {
-        final pids = result.stdout.toString().trim().split('\n');
-        for (final pid in pids) {
-          if (pid.trim().isNotEmpty) {
-            await Process.run('kill', [pid.trim()]);
-          }
-        }
+  bool _shouldRegenerateRoutes(String path, DuxtWatchChangeType changeType) {
+    if (path.contains('/.generated/')) return false;
+
+    final inPages = path.contains('/pages/');
+    final inContent = path.contains('/content/');
+    final inLayouts = path.contains('/layouts/');
+    if (!inPages && !inContent && !inLayouts) return false;
+
+    // Route shape only changes on add/remove/rename (rename is remove+add).
+    return changeType == DuxtWatchChangeType.add ||
+        changeType == DuxtWatchChangeType.remove;
+  }
+
+  Future<void> _cleanupStaleBuildRunners(
+    String projectDir, {
+    bool verbose = false,
+  }) async {
+    if (!Platform.isLinux && !Platform.isMacOS) {
+      return;
+    }
+
+    try {
+      final result = await Process.run('pkill', [
+        '-f',
+        'build_runner.*${projectDir.replaceAll('/', '\\/')}',
+      ]);
+
+      // Give the OS a short window to release resources when a process was killed.
+      if (result.exitCode == 0) {
+        await Future.delayed(const Duration(milliseconds: 300));
+      } else if (verbose && result.exitCode > 1) {
+        print('  \x1B[90mUnable to clean stale build_runner processes\x1B[0m');
+      }
+    } on ProcessException {
+      if (verbose) {
+        print('  \x1B[90mpkill not available, skipping process cleanup\x1B[0m');
       }
     }
-    // Also kill stale build_runner processes for this project
-    await Process.run('pkill', ['-f', 'build_runner.*${projectDir.replaceAll('/', '\\/')}']);
   }
 
   /// Proxy handler that routes /api/* to API server and rest to Jaspr
@@ -603,7 +859,10 @@ class DevCommand extends Command<int> {
         // Remove Jaspr's client JS script tag — DDC dev mode uses modules,
         // not standalone JS. This prevents a useless 404 network request.
         html = html.replaceAll(RegExp(r'<script[^>]+src="[^"]*\.client\.dart\.js"[^>]*>\s*</script>'), '');
-        final script = _DevTools.overlayScript.replaceAll('__PROXY_PORT__', proxyPort.toString());
+        final script = _DevTools.overlayScript.replaceAll(
+          '__PROXY_PORT__',
+          proxyPort.toString(),
+        );
         // Inject before </body>
         if (html.contains('</body>')) {
           html = html.replaceFirst('</body>', '$script</body>');
@@ -673,6 +932,7 @@ class DevCommand extends Command<int> {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="duxt-loading" content="1">
   <title>Building... | Duxt</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -740,6 +1000,22 @@ class DevCommand extends Command<int> {
     const statusEl = document.getElementById('status-text');
     let connected = false;
 
+    function checkReady() {
+      fetch('/', { cache: 'no-store' })
+        .then(r => r.text())
+        .then(html => {
+          const stillLoading = html.includes('name="duxt-loading" content="1"');
+          if (!stillLoading) {
+            statusEl.textContent = 'Build complete! Reloading...';
+            location.reload();
+            return;
+          }
+          statusEl.textContent = 'Waiting for app server...';
+          setTimeout(checkReady, 1200);
+        })
+        .catch(() => setTimeout(checkReady, 2000));
+    }
+
     function tryConnect() {
       const ws = new WebSocket('ws://localhost:$proxyPort/_duxt/ws');
       ws.onopen = () => {
@@ -750,8 +1026,8 @@ class DevCommand extends Command<int> {
         try {
           const data = JSON.parse(e.data);
           if (data.type === 'success' || data.type === 'reload') {
-            statusEl.textContent = 'Build complete! Reloading...';
-            setTimeout(() => location.reload(), 500);
+            statusEl.textContent = 'Build complete! Verifying...';
+            checkReady();
           } else if (data.type === 'building') {
             statusEl.textContent = data.details || 'Compiling...';
           } else if (data.type === 'error') {
@@ -771,11 +1047,7 @@ class DevCommand extends Command<int> {
     tryConnect();
 
     // Also try refreshing periodically as fallback
-    setTimeout(function checkReady() {
-      fetch(location.href, { method: 'HEAD' })
-        .then(r => { if (r.ok) location.reload(); else setTimeout(checkReady, 2000); })
-        .catch(() => setTimeout(checkReady, 2000));
-    }, 3000);
+    setTimeout(checkReady, 3000);
   </script>
 </body>
 </html>
@@ -831,6 +1103,215 @@ class DevCommand extends Command<int> {
   }
 }
 
+class _PendingSourceChange {
+  final String path;
+  final DateTime changedAt;
+  Duration? routeGenerationDuration;
+
+  _PendingSourceChange({
+    required this.path,
+    required this.changedAt,
+  });
+}
+
+class _ActiveRebuildCycle {
+  final int id;
+  final DateTime buildStartedAt;
+  _PendingSourceChange? sourceChange;
+  DateTime? compileCompletedAt;
+
+  _ActiveRebuildCycle({
+    required this.id,
+    required this.buildStartedAt,
+    required this.sourceChange,
+  });
+}
+
+/// Captures per-rebuild timings:
+/// save -> build start -> compile complete -> reload complete.
+class _RebuildPerfTracer {
+  final bool enabled;
+  final String projectDir;
+
+  int _nextCycleId = 1;
+  _PendingSourceChange? _pendingSourceChange;
+  _ActiveRebuildCycle? _activeCycle;
+
+  _RebuildPerfTracer({
+    required this.enabled,
+    required this.projectDir,
+  });
+
+  void onSourceChange(String path) {
+    final sourceChange = _PendingSourceChange(
+      path: path,
+      changedAt: _estimateChangedAt(path),
+    );
+
+    final active = _activeCycle;
+    if (active != null && active.sourceChange == null) {
+      final saveToBuildMs = active.buildStartedAt
+          .difference(sourceChange.changedAt)
+          .inMilliseconds;
+      // Route watcher callbacks are debounced; allow short overlap and backfill.
+      if (saveToBuildMs >= -500 && saveToBuildMs <= 5000) {
+        active.sourceChange = sourceChange;
+        _printPerf([
+          'rebuild=${active.id}',
+          'phase=source_backfill',
+          'file=${_relativePath(sourceChange.path)}',
+          'save_to_build_ms=$saveToBuildMs',
+        ]);
+        return;
+      }
+    }
+
+    _pendingSourceChange = sourceChange;
+  }
+
+  void onRouteGenerationComplete(String path, Duration duration) {
+    final active = _activeCycle;
+    if (active != null &&
+        active.sourceChange != null &&
+        _normalizePath(path) == _normalizePath(active.sourceChange!.path)) {
+      active.sourceChange!.routeGenerationDuration = duration;
+      return;
+    }
+
+    final pending = _pendingSourceChange;
+    if (pending == null) return;
+    if (_normalizePath(path) != _normalizePath(pending.path)) return;
+    pending.routeGenerationDuration = duration;
+  }
+
+  void onBuildStarted(String marker) {
+    if (_activeCycle != null && enabled) {
+      _printPerf([
+        'rebuild=${_activeCycle!.id}',
+        'phase=aborted',
+        'reason=next_build_started_before_reload',
+      ]);
+    }
+
+    final cycle = _ActiveRebuildCycle(
+      id: _nextCycleId++,
+      buildStartedAt: DateTime.now(),
+      sourceChange: _pendingSourceChange,
+    );
+    _activeCycle = cycle;
+    _pendingSourceChange = null;
+
+    final source = cycle.sourceChange;
+    final saveToBuildMs = source == null
+        ? null
+        : cycle.buildStartedAt.difference(source.changedAt).inMilliseconds;
+    final routeGenMs = source?.routeGenerationDuration?.inMilliseconds;
+
+    _printPerf([
+      'rebuild=${cycle.id}',
+      'phase=build_start',
+      if (source != null) 'file=${_relativePath(source.path)}',
+      if (saveToBuildMs != null) 'save_to_build_ms=$saveToBuildMs',
+      if (routeGenMs != null) 'route_gen_ms=$routeGenMs',
+      'marker=${_sanitizeMarker(marker)}',
+    ]);
+  }
+
+  void onCompileCompleted(String marker) {
+    final cycle = _activeCycle;
+    if (cycle == null) return;
+    if (cycle.compileCompletedAt != null) return;
+
+    cycle.compileCompletedAt = DateTime.now();
+    final buildMs = cycle.compileCompletedAt!
+        .difference(cycle.buildStartedAt)
+        .inMilliseconds;
+
+    _printPerf([
+      'rebuild=${cycle.id}',
+      'phase=build_complete',
+      'build_ms=$buildMs',
+      'marker=${_sanitizeMarker(marker)}',
+    ]);
+  }
+
+  void onReloadCompleted(String marker) {
+    final cycle = _activeCycle;
+    if (cycle == null) return;
+
+    final reloadAt = DateTime.now();
+    final compileAt = cycle.compileCompletedAt ?? reloadAt;
+    final source = cycle.sourceChange;
+
+    final saveToBuildMs = source == null
+        ? null
+        : cycle.buildStartedAt.difference(source.changedAt).inMilliseconds;
+    final routeGenMs = source?.routeGenerationDuration?.inMilliseconds;
+    final buildMs = compileAt.difference(cycle.buildStartedAt).inMilliseconds;
+    final reloadMs = reloadAt.difference(compileAt).inMilliseconds;
+    final totalFromBuildMs =
+        reloadAt.difference(cycle.buildStartedAt).inMilliseconds;
+    final totalFromSaveMs = source == null
+        ? null
+        : reloadAt.difference(source.changedAt).inMilliseconds;
+
+    _printPerf([
+      'rebuild=${cycle.id}',
+      'phase=reload_complete',
+      if (source != null) 'file=${_relativePath(source.path)}',
+      if (saveToBuildMs != null) 'save_to_build_ms=$saveToBuildMs',
+      if (routeGenMs != null) 'route_gen_ms=$routeGenMs',
+      'build_ms=$buildMs',
+      'reload_ms=$reloadMs',
+      'total_from_build_ms=$totalFromBuildMs',
+      if (totalFromSaveMs != null) 'total_from_save_ms=$totalFromSaveMs',
+      'marker=${_sanitizeMarker(marker)}',
+    ]);
+
+    _activeCycle = null;
+  }
+
+  void onBuildError(String line) {
+    final cycle = _activeCycle;
+    if (cycle == null) return;
+    final elapsedMs =
+        DateTime.now().difference(cycle.buildStartedAt).inMilliseconds;
+    _printPerf([
+      'rebuild=${cycle.id}',
+      'phase=error',
+      'elapsed_ms=$elapsedMs',
+      'line=${_sanitizeMarker(line)}',
+    ]);
+  }
+
+  String _relativePath(String path) {
+    final normalized = _normalizePath(path);
+    final relative = p.relative(normalized, from: _normalizePath(projectDir));
+    if (relative.startsWith('..')) return normalized;
+    return relative;
+  }
+
+  String _normalizePath(String path) => p.normalize(path).replaceAll('\\', '/');
+
+  DateTime _estimateChangedAt(String path) {
+    try {
+      final file = File(path);
+      if (file.existsSync()) {
+        return file.lastModifiedSync();
+      }
+    } catch (_) {}
+    return DateTime.now();
+  }
+
+  String _sanitizeMarker(String marker) =>
+      marker.replaceAll('|', '/').replaceAll(RegExp(r'\s+'), ' ').trim();
+
+  void _printPerf(List<String> fields) {
+    if (!enabled) return;
+    print('\x1B[90m[perf]\x1B[0m ${fields.join(' | ')}');
+  }
+}
+
 /// Simple spinner for build progress
 class _Spinner {
   final String message;
@@ -864,10 +1345,9 @@ class _DevTools {
   void addClient(WebSocketChannel webSocket) {
     _clients.add(webSocket);
 
-    webSocket.sink.add(jsonEncode({
-      'type': 'connected',
-      'message': 'Duxt DevTools connected',
-    }));
+    webSocket.sink.add(
+      jsonEncode({'type': 'connected', 'message': 'Duxt DevTools connected'}),
+    );
 
     // Send current state to new client (fixes race condition where
     // client connects after build completed)
@@ -913,7 +1393,7 @@ class _DevTools {
 
   /// Close all connected clients.
   void close() {
-    for (final client in _clients) {
+    for (final client in _clients.toList()) {
       try {
         client.sink.close();
       } catch (_) {}

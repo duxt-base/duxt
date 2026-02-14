@@ -54,6 +54,16 @@ class RouterGenerator {
 
     // Generate code
     final code = _generateRouterCode(routes, projectDir, namespaceLayouts);
+
+    // Skip write if unchanged — prevents unnecessary build_runner rebuild cycles
+    if (outputFile.existsSync()) {
+      final existing = await outputFile.readAsString();
+      if (existing == code) {
+        print('  Routes unchanged (${routes.length} routes)');
+        return;
+      }
+    }
+
     await outputFile.writeAsString(code);
 
     print('  Generated ${routes.length} routes from ${_countModules(routes)} modules');

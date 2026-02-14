@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'error_html.dart';
+import 'jaspr_cli.dart';
 
 /// Builds Duxt project for production
 class DuxtBuilder {
@@ -33,13 +34,14 @@ class DuxtBuilder {
   }
 
   static Future<void> _buildFrontend(String projectDir, String outputDir) async {
-    final jasprPath = _findJasprCli();
+    final jasprPath = JasprCli.resolveCommand();
 
     print('  Building frontend...');
     final result = await Process.run(
       jasprPath,
       ['build'],
       workingDirectory: projectDir,
+      runInShell: JasprCli.shouldRunInShell(jasprPath),
     );
 
     if (result.exitCode != 0) {
@@ -184,17 +186,6 @@ class DuxtBuilder {
       return 'arm64';
     }
     return 'x64';
-  }
-
-  static String _findJasprCli() {
-    final home = Platform.environment['HOME'] ?? '';
-    final pubCachePath = p.join(home, '.pub-cache', 'bin', 'jaspr');
-
-    if (File(pubCachePath).existsSync()) {
-      return pubCachePath;
-    }
-
-    return 'jaspr';
   }
 
   static const _excludedFiles = {'.env', '.env.local', '.env.production', '.env.development'};

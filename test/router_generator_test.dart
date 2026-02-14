@@ -308,6 +308,40 @@ class SharedPage extends StatelessComponent {
       expect(content, isNot(contains('SharedPage')));
     });
 
+    test('skips write when routes unchanged', () async {
+      // Create a module
+      final pagesDir = Directory(p.join(tempDir.path, 'lib', 'home', 'pages'));
+      pagesDir.createSync(recursive: true);
+
+      File(p.join(pagesDir.path, 'index.dart')).writeAsStringSync('''
+import 'package:jaspr/jaspr.dart';
+class HomePage extends StatelessComponent {
+  const HomePage();
+  @override Iterable<Component> build(BuildContext context) sync* {}
+}
+''');
+
+      // Generate once
+      await RouterGenerator.generate(tempDir.path);
+      final outputFile = File(p.join(tempDir.path, 'lib', '.generated', 'routes.dart'));
+      expect(outputFile.existsSync(), isTrue);
+
+      final firstContent = outputFile.readAsStringSync();
+      final firstModified = outputFile.lastModifiedSync();
+
+      // Wait a moment so timestamps differ if the file were rewritten
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Generate again — routes haven't changed, file should NOT be rewritten
+      await RouterGenerator.generate(tempDir.path);
+      final secondContent = outputFile.readAsStringSync();
+      final secondModified = outputFile.lastModifiedSync();
+
+      expect(secondContent, equals(firstContent));
+      // File should not have been rewritten (same modification time)
+      expect(secondModified, equals(firstModified));
+    });
+
     test('handles nested subdirectory pages', () async {
       final pagesDir = Directory(p.join(tempDir.path, 'lib', 'blog', 'pages', 'category'));
       pagesDir.createSync(recursive: true);

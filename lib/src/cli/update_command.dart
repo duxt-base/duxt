@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:args/command_runner.dart';
@@ -25,7 +26,7 @@ class UpdateCommand extends Command<int> {
       print('  Current version: \x1B[33m$currentVersion\x1B[0m');
 
       // Get latest version from pub.dev
-      final latestVersion = await _getLatestVersion();
+      final latestVersion = await _fetchLatestVersion();
       print('  Latest version:  \x1B[32m$latestVersion\x1B[0m');
       print('');
 
@@ -57,41 +58,26 @@ class UpdateCommand extends Command<int> {
       return 1;
     }
   }
-
-  Future<String> _getLatestVersion() async {
-    final result = await Process.run(
-      'curl',
-      ['-s', 'https://pub.dev/api/packages/duxt'],
-    );
-
-    if (result.exitCode != 0) {
-      throw Exception('Failed to check pub.dev');
-    }
-
-    final json = jsonDecode(result.stdout as String);
-    return json['latest']['version'] as String;
-  }
 }
 
 /// Check for updates and notify user (non-blocking)
 Future<void> checkForUpdates(String currentVersion) async {
   try {
-    final result = await Process.run(
-      'curl',
-      ['-s', '--max-time', '2', 'https://pub.dev/api/packages/duxt'],
+    final latestVersion = await _fetchLatestVersion(
+      timeout: const Duration(seconds: 2),
     );
 
-    if (result.exitCode != 0) return;
-
-    final json = jsonDecode(result.stdout as String);
-    final latestVersion = json['latest']['version'] as String;
-
-    if (latestVersion != currentVersion && _isNewer(latestVersion, currentVersion)) {
+    if (latestVersion != currentVersion &&
+        _isNewer(latestVersion, currentVersion)) {
       print('');
-      print('\x1B[33m┌─────────────────────────────────────────────────┐\x1B[0m');
-      print('\x1B[33m│\x1B[0m  Update available: \x1B[90m$currentVersion\x1B[0m → \x1B[32m$latestVersion\x1B[0m            \x1B[33m│\x1B[0m');
-      print('\x1B[33m│\x1B[0m  Run \x1B[1mduxt update\x1B[0m to update                      \x1B[33m│\x1B[0m');
-      print('\x1B[33m└─────────────────────────────────────────────────┘\x1B[0m');
+      print(
+          '\x1B[33m┌─────────────────────────────────────────────────┐\x1B[0m');
+      print(
+          '\x1B[33m│\x1B[0m  Update available: \x1B[90m$currentVersion\x1B[0m → \x1B[32m$latestVersion\x1B[0m            \x1B[33m│\x1B[0m');
+      print(
+          '\x1B[33m│\x1B[0m  Run \x1B[1mduxt update\x1B[0m to update                      \x1B[33m│\x1B[0m');
+      print(
+          '\x1B[33m└─────────────────────────────────────────────────┘\x1B[0m');
       print('');
     }
   } catch (_) {
@@ -99,13 +85,57 @@ Future<void> checkForUpdates(String currentVersion) async {
   }
 }
 
-bool _isNewer(String latest, String current) {
-  final latestParts = latest.split('.').map(int.parse).toList();
-  final currentParts = current.split('.').map(int.parse).toList();
+Future<String> _fetchLatestVersion({
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final client = HttpClient()..connectionTimeout = timeout;
+  try {
+    final request = await client
+        .getUrl(Uri.parse('https://pub.dev/api/packages/duxt'))
+        .timeout(timeout);
+    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
 
-  for (var i = 0; i < 3; i++) {
-    if (latestParts[i] > currentParts[i]) return true;
-    if (latestParts[i] < currentParts[i]) return false;
+    final response = await request.close().timeout(timeout);
+    if (response.statusCode != HttpStatus.ok) {
+      throw Exception('pub.dev returned ${response.statusCode}');
+    }
+
+    final body = await utf8.decoder.bind(response).join().timeout(timeout);
+    final payload = jsonDecode(body);
+    if (payload is! Map) {
+      throw Exception('Unexpected pub.dev response');
+    }
+
+    final latest = payload['latest'];
+    if (latest is! Map || latest['version'] is! String) {
+      throw Exception('pub.dev response missing latest version');
+    }
+
+    return latest['version'] as String;
+  } on TimeoutException {
+    throw Exception('Timed out while checking pub.dev');
+  } finally {
+    client.close(force: true);
+  }
+}
+
+bool _isNewer(String latest, String current) {
+  final latestParts = _parseVersion(latest);
+  final currentParts = _parseVersion(current);
+  final length = latestParts.length > currentParts.length
+      ? latestParts.length
+      : currentParts.length;
+
+  for (var i = 0; i < length; i++) {
+    final latestPart = i < latestParts.length ? latestParts[i] : 0;
+    final currentPart = i < currentParts.length ? currentParts[i] : 0;
+    if (latestPart > currentPart) return true;
+    if (latestPart < currentPart) return false;
   }
   return false;
+}
+
+List<int> _parseVersion(String version) {
+  final coreVersion = version.split('-').first;
+  return coreVersion.split('.').map((part) => int.tryParse(part) ?? 0).toList();
 }
