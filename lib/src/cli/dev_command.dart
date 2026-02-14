@@ -105,7 +105,8 @@ class DevCommand extends Command<int> {
     await Future.wait([
       PackageSync.sync(projectDir),
       RouterGenerator.generate(projectDir),
-      Process.run('pkill', ['-f', 'build_runner.*${projectDir.replaceAll('/', '\\/')}']),
+      // Kill stale processes on all ports we'll use (orphans from previous runs)
+      _killStaleProcesses(port, projectDir),
     ]);
     prepTimer.stop();
     print('  \x1B[90m${prepTimer.elapsedMilliseconds}ms\x1B[0m');
@@ -334,19 +335,28 @@ class DevCommand extends Command<int> {
       tauriProcess = await _launchTauriDev(projectDir, port, verbose: verbose);
     }
 
-    // Keep running until interrupted
+    // Keep running until interrupted (handle both SIGINT and SIGTERM)
+    void shutdown() {
+      print('');
+      print('\x1B[90mShutting down...\x1B[0m');
+
+      tauriProcess?.kill();
+      proxyServer?.close();
+      devTools.close();
+      watcher.stop();
+      tailwindProcess?.kill();
+      apiProcess?.kill();
+      jasprProcess?.kill();
+    }
+
+    // SIGTERM is sent by `kill` command (default signal)
+    ProcessSignal.sigterm.watch().listen((_) {
+      shutdown();
+      exit(0);
+    });
+
     await ProcessSignal.sigint.watch().first;
-
-    print('');
-    print('\x1B[90mShutting down...\x1B[0m');
-
-    tauriProcess?.kill();
-    await proxyServer.close();
-    devTools.close();
-    await watcher.stop();
-    tailwindProcess?.kill();
-    apiProcess?.kill();
-    jasprProcess.kill();
+    shutdown();
 
     return 0;
   }
@@ -438,6 +448,24 @@ class DevCommand extends Command<int> {
         return response.change(headers: corsHeaders);
       };
     };
+  }
+
+  /// Kill stale processes on ports from a previous run that wasn't cleaned up
+  Future<void> _killStaleProcesses(int basePort, String projectDir) async {
+    final ports = [basePort, basePort + 1, basePort + 2, basePort + 3, basePort + 4];
+    for (final p in ports) {
+      final result = await Process.run('lsof', ['-ti:$p']);
+      if (result.stdout.toString().trim().isNotEmpty) {
+        final pids = result.stdout.toString().trim().split('\n');
+        for (final pid in pids) {
+          if (pid.trim().isNotEmpty) {
+            await Process.run('kill', [pid.trim()]);
+          }
+        }
+      }
+    }
+    // Also kill stale build_runner processes for this project
+    await Process.run('pkill', ['-f', 'build_runner.*${projectDir.replaceAll('/', '\\/')}']);
   }
 
   /// Proxy handler that routes /api/* to API server and rest to Jaspr
