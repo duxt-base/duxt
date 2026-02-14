@@ -3,12 +3,12 @@ import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
 /// Docs command - generate and manage documentation
-/// Usage: duxt docs <subcommand>
+/// Usage: `duxt docs <subcommand>`
 ///
 /// Subcommands:
-///   generate     Generate API docs from code
-///   page <name>  Create a documentation page
-///   tutorial <name>  Create a tutorial page
+///   generate         Generate API docs from code
+///   `page <name>`    Create a documentation page
+///   `tutorial <name>` Create a tutorial page
 class DocsCommand extends Command<int> {
   @override
   final name = 'docs';

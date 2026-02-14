@@ -7,19 +7,19 @@ enum RouteType { dart, content }
 /// Generates Jaspr Router configuration from module-based structure
 ///
 /// Conventions:
-/// - lib/<module>/pages/index.dart -> /<module> (or / for "home" module)
-/// - lib/<module>/pages/_id_.dart -> /<module>/:id
-/// - lib/<module>/pages/new.dart -> /<module>/new
-/// - lib/<module>/pages/_id_/edit.dart -> /<module>/:id/edit
-/// - lib/<module>/content/cli.md -> /<module>/cli (content route)
-/// - lib/<module>/content/sub/nested.md -> /<module>/sub/nested (content route)
+/// - `lib/<module>/pages/index.dart` -> `/<module>` (or `/` for "home" module)
+/// - `lib/<module>/pages/_id_.dart` -> `/<module>/:id`
+/// - `lib/<module>/pages/new.dart` -> `/<module>/new`
+/// - `lib/<module>/pages/_id_/edit.dart` -> `/<module>/:id/edit`
+/// - `lib/<module>/content/cli.md` -> `/<module>/cli` (content route)
+/// - `lib/<module>/content/sub/nested.md` -> `/<module>/sub/nested` (content route)
 ///
 /// Namespace support:
-/// - lib/<namespace>/<module>/pages/index.dart -> /<namespace>/<module>
-/// - lib/admin/posts/pages/index.dart -> /admin/posts
-/// - lib/theme/blog/pages/index.dart -> /blog (theme/ strips prefix)
-/// - lib/theme/home/pages/index.dart -> / (theme/home maps to root)
-/// - lib/<namespace>/layouts/default.dart -> wraps all namespace routes
+/// - `lib/<namespace>/<module>/pages/index.dart` -> `/<namespace>/<module>`
+/// - `lib/admin/posts/pages/index.dart` -> `/admin/posts`
+/// - `lib/theme/blog/pages/index.dart` -> `/blog` (theme/ strips prefix)
+/// - `lib/theme/home/pages/index.dart` -> `/` (theme/home maps to root)
+/// - `lib/<namespace>/layouts/default.dart` -> wraps all namespace routes
 class RouterGenerator {
   static Future<void> generate(String projectDir) async {
     final libDir = Directory(p.join(projectDir, 'lib'));

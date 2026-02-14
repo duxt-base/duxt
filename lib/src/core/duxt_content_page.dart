@@ -1,7 +1,7 @@
 /// DuxtContentPage - Renders markdown content from module content directories
 ///
 /// This component is used by generated routes to render markdown files
-/// that are located in `lib/<module>/content/` directories.
+/// that are located in `lib/&lt;module&gt;/content/` directories.
 library;
 
 import 'dart:io';

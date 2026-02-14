@@ -49,7 +49,7 @@ const _reservedNames = {
 };
 
 /// Command to create a new Duxt project
-/// Usage: duxt create <project-name>
+/// Usage: `duxt create <project-name>`
 class CreateCommand extends Command<int> {
   @override
   final name = 'create';

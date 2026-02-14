@@ -77,29 +77,9 @@ extension DuxtNavigation on BuildContext {
 
 /// Async data result holder.
 ///
-/// Usage with DuxtState is preferred, but this can be used standalone:
-/// ```dart
-/// class _MyState extends State<MyPage> {
-///   final _posts = AsyncData<List<Post>>();
-///
-///   @override
-///   void initState() {
-///     super.initState();
-///     _loadPosts();
-///   }
-///
-///   Future<void> _loadPosts() async {
-///     _posts.setLoading();
-///     setState(() {});
-///     try {
-///       _posts.setData(await PostsApi.getAll());
-///     } catch (e) {
-///       _posts.setError(e);
-///     }
-///     setState(() {});
-///   }
-/// }
-/// ```
+/// Usage with DuxtState is preferred, but this can be used standalone
+/// by creating an instance and calling [setLoading], [setData], or
+/// [setError] to update state.
 class AsyncData<T> {
   T? _data;
   Object? _error;

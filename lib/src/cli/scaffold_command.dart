@@ -3,7 +3,7 @@ import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
 /// Scaffold command - generates full module with CRUD
-/// Usage: duxt scaffold <name> [field:type ...]
+/// Usage: `duxt scaffold <name> [field:type ...]`
 ///
 /// Example: duxt scaffold posts title:String content:String author:String
 /// Example: duxt scaffold Admin/Post title:String body:String (namespace)

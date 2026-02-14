@@ -3,7 +3,7 @@ import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
 /// Generate command - Short generator for modules, pages, components
-/// Usage: duxt g <type> <module>/<name> [field:type ...]
+/// Usage: `duxt g <type> <module>/<name> [field:type ...]`
 ///
 /// Examples:
 ///   duxt g module posts

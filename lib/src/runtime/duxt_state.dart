@@ -2,29 +2,9 @@ import 'package:jaspr/jaspr.dart';
 
 /// Base class for StatefulComponent states that handle async data loading in SPA mode.
 ///
-/// Usage:
-/// ```dart
-/// class PostsListPage extends StatefulComponent {
-///   const PostsListPage({super.key});
-///
-///   @override
-///   State createState() => _PostsListPageState();
-/// }
-///
-/// class _PostsListPageState extends DuxtState<PostsListPage, List<Post>> {
-///   @override
-///   Future<List<Post>> load() => PostsApi.getAll();
-///
-///   @override
-///   Component buildLoading() => div([Component.text('Loading...')]);
-///
-///   @override
-///   Component buildError(Object e) => div([Component.text('Error: $e')]);
-///
-///   @override
-///   Component buildData(List<Post> posts) => PostList(posts: posts);
-/// }
-/// ```
+/// Extend this class in your page's State, providing the component type
+/// and data type as type parameters. Override [load], [buildLoading],
+/// [buildError], and [buildData].
 abstract class DuxtState<S extends StatefulComponent, T> extends State<S> {
   T? _data;
   Object? _error;
@@ -94,29 +74,9 @@ abstract class DuxtState<S extends StatefulComponent, T> extends State<S> {
 
 /// Base class for multiple data sources in SPA mode.
 ///
-/// Usage:
-/// ```dart
-/// class _DashboardState extends DuxtMultiState<DashboardPage> {
-///   @override
-///   Map<String, Future<dynamic> Function()> get loaders => {
-///     'posts': PostsApi.getAll,
-///     'users': UsersApi.getAll,
-///   };
-///
-///   @override
-///   Component buildLoading() => div([Component.text('Loading...')]);
-///
-///   @override
-///   Component buildError(Object e) => div([Component.text('Error: $e')]);
-///
-///   @override
-///   Component buildData(Map<String, dynamic> data) {
-///     final posts = data['posts'] as List<Post>;
-///     final users = data['users'] as List<User>;
-///     return Dashboard(posts: posts, users: users);
-///   }
-/// }
-/// ```
+/// Extend this class and override [loaders] to provide named async
+/// data sources. Override [buildLoading], [buildError], and [buildData]
+/// to handle each state.
 abstract class DuxtMultiState<S extends StatefulComponent> extends State<S> {
   final Map<String, dynamic> _data = {};
   Object? _error;
