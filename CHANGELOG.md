@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.3] - 2026-02-18
+
+- This prevents generated imports like ..\home\pages\index.dart and makes generated Dart imports valid on Windows.
+
 ## [0.6.2] - 2026-02-18
 
 - windows jaspr cli resolution
