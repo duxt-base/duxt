@@ -193,7 +193,7 @@ class RouterGenerator {
   static RouteInfo? _contentFileToRoute(
       String filePath, String basePath, String moduleName) {
     // Get relative path from content/
-    var relativePath = p.relative(filePath, from: basePath);
+    var relativePath = _normalizePath(p.relative(filePath, from: basePath));
 
     // Remove .md/.mdx extension
     relativePath = relativePath.replaceAll('.mdx', '').replaceAll('.md', '');
@@ -210,7 +210,7 @@ class RouterGenerator {
 
     return RouteInfo(
       path: routePath,
-      filePath: filePath,
+      filePath: _normalizePath(filePath),
       componentName: '', // Not used for content routes
       moduleName: moduleName,
       params: [],
@@ -253,7 +253,7 @@ class RouterGenerator {
 
   static RouteInfo? _fileToRoute(String filePath, String basePath, String moduleName) {
     // Get relative path from pages/
-    var relativePath = p.relative(filePath, from: basePath);
+    var relativePath = _normalizePath(p.relative(filePath, from: basePath));
 
     // Remove .dart extension
     relativePath = relativePath.replaceAll('.dart', '');
@@ -315,7 +315,7 @@ class RouterGenerator {
 
     return RouteInfo(
       path: routePath,
-      filePath: filePath,
+      filePath: _normalizePath(filePath),
       componentName: componentInfo.name!,
       moduleName: moduleName,
       params: params,
@@ -448,8 +448,9 @@ class RouterGenerator {
     // Import all dart page files
     // Note: routes.dart is in lib/.generated/, so imports are relative to that
     for (final route in dartRoutes) {
-      final importPath =
-          p.relative(route.filePath, from: p.join(projectDir, 'lib', '.generated'));
+      final importPath = _normalizePath(
+        p.relative(route.filePath, from: p.join(projectDir, 'lib', '.generated')),
+      );
       buffer.writeln("import '$importPath' as ${_toImportAlias(route)};");
     }
 
@@ -460,8 +461,9 @@ class RouterGenerator {
       if (ns != null && !usedNamespaces.contains(ns)) {
         usedNamespaces.add(ns);
         final layoutPath = namespaceLayouts[ns]!;
-        final importPath =
-            p.relative(layoutPath, from: p.join(projectDir, 'lib', '.generated'));
+        final importPath = _normalizePath(
+          p.relative(layoutPath, from: p.join(projectDir, 'lib', '.generated')),
+        );
         buffer.writeln("import '$importPath' as ${_toLayoutAlias(ns)};");
       }
     }
@@ -600,6 +602,9 @@ class RouterGenerator {
     final safe = namespace.replaceAll(RegExp(r'[^a-z0-9]'), '_').toLowerCase();
     return 'layout_$safe';
   }
+
+  static String _normalizePath(String path) =>
+      p.normalize(path).replaceAll('\\', '/');
 }
 
 /// Information about a route
