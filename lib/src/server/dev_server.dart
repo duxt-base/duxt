@@ -67,14 +67,9 @@ class DevServer {
     // 2. Start Jaspr dev server
     print('\x1B[36m→\x1B[0m Starting Jaspr dev server on port $jasprPort...');
 
-    // Find jaspr CLI
-    final home = Platform.environment['HOME'] ?? '';
-    final jasprCli = '$home/.pub-cache/bin/jaspr';
-    final jasprCmd = File(jasprCli).existsSync() ? jasprCli : 'jaspr';
-
     _jasprProcess = await Process.start(
-      jasprCmd,
-      ['serve', '--port', jasprPort.toString()],
+      'dart',
+      ['pub', 'global', 'run', 'jaspr_cli:jaspr', 'serve', '--port', jasprPort.toString()],
       workingDirectory: projectDir,
     );
 

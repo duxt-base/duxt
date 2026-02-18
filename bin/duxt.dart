@@ -121,10 +121,13 @@ Run "duxt help <command>" for more information.
 /// Check if jaspr CLI is installed and meets minimum version requirement
 Future<void> checkJasprVersion() async {
   try {
-    final result = await Process.run('jaspr', ['--version']);
+    final result = await Process.run(
+      'dart',
+      ['pub', 'global', 'run', 'jaspr_cli:jaspr', '--version'],
+    );
     if (result.exitCode != 0) {
       print('\x1B[31m✗\x1B[0m Jaspr CLI not found.');
-      print('  Install it with: dart pub global activate jaspr');
+      print('  Install it with: dart pub global activate jaspr_cli');
       exit(1);
     }
 
@@ -153,13 +156,13 @@ Future<void> checkJasprVersion() async {
       print('\x1B[31m✗\x1B[0m Jaspr version $installedVersion is not supported.');
       print('  Please update to the latest version.');
       print('');
-      print('  Run: jaspr update');
+      print('  Run: dart pub global activate jaspr_cli');
       print('');
       exit(1);
     }
   } catch (e) {
     print('\x1B[31m✗\x1B[0m Jaspr CLI not found.');
-    print('  Install it with: dart pub global activate jaspr');
+    print('  Install it with: dart pub global activate jaspr_cli');
     exit(1);
   }
 }

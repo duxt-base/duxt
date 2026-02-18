@@ -33,10 +33,11 @@ class DoctorCommand extends Command<int> {
     }
 
     // Check Jaspr CLI
-    final home = Platform.environment['HOME'] ?? '';
-    final jasprPath = '$home/.pub-cache/bin/jaspr';
-    if (File(jasprPath).existsSync()) {
-      final jasprVersion = await Process.run(jasprPath, ['--version']);
+    final jasprVersion = await Process.run(
+      'dart',
+      ['pub', 'global', 'run', 'jaspr_cli:jaspr', '--version'],
+    );
+    if (jasprVersion.exitCode == 0) {
       final version = jasprVersion.stdout.toString().trim();
       print('  \x1B[32m✓\x1B[0m Jaspr CLI: $version');
     } else {
@@ -128,8 +129,8 @@ class DoctorCommand extends Command<int> {
     // Run jaspr doctor for additional diagnostics
     print('\x1B[1mJaspr Diagnostics:\x1B[0m');
     final jasprDoctor = await Process.run(
-      File(jasprPath).existsSync() ? jasprPath : 'jaspr',
-      ['doctor'],
+      'dart',
+      ['pub', 'global', 'run', 'jaspr_cli:jaspr', 'doctor'],
       workingDirectory: projectDir,
     );
 

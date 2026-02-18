@@ -21,12 +21,9 @@ class CleanCommand extends Command<int> {
 
     // Run jaspr clean first
     print('  Running jaspr clean...');
-    final home = Platform.environment['HOME'] ?? '';
-    final jasprPath = '$home/.pub-cache/bin/jaspr';
-
     final jasprClean = await Process.run(
-      File(jasprPath).existsSync() ? jasprPath : 'jaspr',
-      ['clean'],
+      'dart',
+      ['pub', 'global', 'run', 'jaspr_cli:jaspr', 'clean'],
       workingDirectory: projectDir,
     );
 
