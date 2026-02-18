@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [0.6.2] - 2026-02-18
 
+- windows jaspr cli resolution
+
+## [0.6.2] - 2026-02-18
+
 ### Fixed
 - Windows `duxt dev` could fail with `jaspr cli not found` due to Unix-only path assumptions.
 - Switched remaining CLI jaspr invocations to cross-platform execution via `dart pub global run jaspr_cli:jaspr`.
