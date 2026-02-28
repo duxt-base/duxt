@@ -17,12 +17,12 @@ class PreviewCommand extends Command<int> {
       'port',
       abbr: 'p',
       defaultsTo: '4000',
-      help: 'Port for frontend server',
+      help: 'Port for the unified server (proxies /api to API server)',
     );
     argParser.addOption(
       'api-port',
       defaultsTo: '3001',
-      help: 'Port for API server',
+      help: 'Internal port for API server',
     );
   }
 
@@ -30,7 +30,7 @@ class PreviewCommand extends Command<int> {
   Future<int> run() async {
     final projectDir = Directory.current.path;
     final port = int.parse(argResults!['port'] as String);
-    final apiPort = argResults!['api-port'] as String;
+    final apiPort = int.parse(argResults!['api-port'] as String);
 
     print('');
     print('\x1B[36m╭─────────────────────────────────────╮\x1B[0m');
@@ -47,18 +47,20 @@ class PreviewCommand extends Command<int> {
     }
 
     Process? apiProcess;
+    var hasApi = false;
 
     // Check for compiled server binary
     final serverBinary = _findServerBinary(projectDir);
     if (serverBinary != null) {
-      print('\x1B[90m→\x1B[0m Starting API server...');
+      hasApi = true;
+      print('\x1B[90m→\x1B[0m Starting API server on port $apiPort...');
       // Run from .output/ directory so native libs are found correctly
       final outputDir = p.dirname(serverBinary);
       apiProcess = await Process.start(
         serverBinary,
         [],
         workingDirectory: outputDir,
-        environment: {'PORT': apiPort},
+        environment: {'PORT': apiPort.toString()},
       );
 
       apiProcess.stdout.listen((data) {
@@ -71,8 +73,8 @@ class PreviewCommand extends Command<int> {
       });
     }
 
-    // Start frontend server
-    print('\x1B[90m→\x1B[0m Starting frontend server...');
+    // Start unified server — proxies /api/* to API, serves static for rest
+    print('\x1B[90m→\x1B[0m Starting server...');
     final staticServer = StaticFileServer(buildDir.path);
     final server = await HttpServer.bind(InternetAddress.anyIPv4, port);
 
@@ -80,15 +82,21 @@ class PreviewCommand extends Command<int> {
     print('\x1B[32m✓\x1B[0m Preview running!');
     print('');
     print('  \x1B[1mApp:\x1B[0m  \x1B[36mhttp://localhost:$port\x1B[0m');
-    if (apiProcess != null) {
-      print('  \x1B[1mAPI:\x1B[0m  \x1B[36mhttp://localhost:$apiPort\x1B[0m');
+    if (hasApi) {
+      print('  \x1B[1mAPI:\x1B[0m  \x1B[36mhttp://localhost:$port/api\x1B[0m');
     }
     print('');
     print('\x1B[90mPress Ctrl+C to stop\x1B[0m');
     print('');
 
-    // Handle requests
-    server.listen((request) => staticServer.handleRequest(request));
+    // Handle requests — proxy /api/* to API server, static for everything else
+    server.listen((request) async {
+      if (hasApi && request.uri.path.startsWith('/api')) {
+        await _proxyToApi(request, apiPort);
+      } else {
+        await staticServer.handleRequest(request);
+      }
+    });
 
     // Handle both SIGINT (Ctrl+C) and SIGTERM (kill)
     void shutdown() {
@@ -107,6 +115,51 @@ class PreviewCommand extends Command<int> {
     shutdown();
 
     return 0;
+  }
+
+  /// Proxy an incoming request to the API server.
+  Future<void> _proxyToApi(HttpRequest request, int apiPort) async {
+    try {
+      final client = HttpClient();
+      final uri = Uri.parse('http://localhost:$apiPort${request.uri}');
+      final proxyReq = await client.openUrl(request.method, uri);
+
+      // Copy headers
+      request.headers.forEach((name, values) {
+        if (name.toLowerCase() != 'host') {
+          for (final v in values) {
+            proxyReq.headers.add(name, v);
+          }
+        }
+      });
+
+      // Copy request body
+      final body = await request.fold<List<int>>(
+        <int>[],
+        (previous, chunk) => previous..addAll(chunk),
+      );
+      proxyReq.add(body);
+      final proxyRes = await proxyReq.close();
+
+      // Copy response status and headers
+      request.response.statusCode = proxyRes.statusCode;
+      proxyRes.headers.forEach((name, values) {
+        if (name.toLowerCase() != 'transfer-encoding') {
+          for (final v in values) {
+            request.response.headers.add(name, v);
+          }
+        }
+      });
+
+      // Pipe response body
+      await proxyRes.pipe(request.response);
+    } catch (e) {
+      request.response
+        ..statusCode = HttpStatus.badGateway
+        ..headers.contentType = ContentType.json
+        ..write('{"error":"API server not available","message":"$e"}');
+      await request.response.close();
+    }
   }
 
   String? _findServerBinary(String projectDir) {

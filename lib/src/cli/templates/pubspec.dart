@@ -76,7 +76,8 @@ class DuxtConfig {
 
 /// Optimized build.yaml template
 /// - Scopes all jaspr_builder modules to lib/ only (excludes server/, test/)
-/// - Limits entrypoint builder to web/main.client.dart
+/// - Disables jaspr_tailwind (Duxt handles its own CSS pipeline)
+/// - Enables AOT compilation for faster builder startup
 const buildYamlTemplate = '''
 targets:
   \$default:
@@ -100,6 +101,13 @@ targets:
             - lib/**/*.dart
           exclude:
             - lib/.generated/**
+      # Duxt runs its own Tailwind CLI — disable Jaspr's duplicate builder
+      jaspr_tailwind|compiler:
+        enabled: false
+global_options:
+  build_runner:
+    options:
+      aot: true
 ''';
 
 /// .gitignore template

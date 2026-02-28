@@ -1,9 +1,10 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
+import '../core/package_sync.dart';
 import '../core/router_generator.dart';
 import '../core/builder.dart';
+import '../core/tailwind.dart';
 import 'tauri_scaffold.dart';
 
 /// Command to build a native desktop app using Tauri v2
@@ -139,17 +140,13 @@ class BuildDesktopCommand extends Command<int> {
 
   /// Run the Duxt frontend build pipeline
   Future<void> _buildFrontend(String projectDir) async {
-    // Sync packages for Tailwind
-    print('  Syncing packages...');
-    await _syncPackages(projectDir);
-
-    // Compile Tailwind CSS
-    print('  Compiling Tailwind CSS...');
-    await _compileTailwind(projectDir);
-
-    // Generate routes
-    print('  Generating routes...');
-    await RouterGenerator.generate(projectDir);
+    // Run independent init steps in parallel
+    print('  Syncing packages, compiling CSS, generating routes...');
+    await Future.wait([
+      PackageSync.sync(projectDir),
+      DuxtTailwind.compile(projectDir, minify: true),
+      RouterGenerator.generate(projectDir),
+    ]);
 
     // Build via DuxtBuilder
     print('  Running jaspr build...');
@@ -197,91 +194,4 @@ class BuildDesktopCommand extends Command<int> {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
-  // ---------------------------------------------------------------------------
-  // Build helpers (shared with BuildCommand)
-  // ---------------------------------------------------------------------------
-
-  Future<void> _compileTailwind(String projectDir) async {
-    final inputFile = File(p.join(projectDir, 'web', 'styles.tw.css'));
-    if (!inputFile.existsSync()) {
-      print('    No styles.tw.css found, skipping');
-      return;
-    }
-
-    final result = await Process.run(
-      'tailwindcss',
-      [
-        '--input', p.join(projectDir, 'web', 'styles.tw.css'),
-        '--output', p.join(projectDir, 'web', 'styles.css'),
-        '--minify',
-      ],
-      workingDirectory: projectDir,
-    );
-
-    if (result.exitCode != 0) {
-      print('    \x1B[31mTailwind error:\x1B[0m ${result.stderr}');
-    }
-  }
-
-  Future<void> _syncPackages(String projectDir) async {
-    final packagesToSync = ['duxt_ui', 'duxt'];
-    final targetDir = Directory(p.join(projectDir, '.duxt', 'packages'));
-
-    final packageConfigFile =
-        File(p.join(projectDir, '.dart_tool', 'package_config.json'));
-    if (!packageConfigFile.existsSync()) {
-      print('    \x1B[33m!\x1B[0m Run "dart pub get" first');
-      return;
-    }
-
-    final packageConfig =
-        jsonDecode(await packageConfigFile.readAsString());
-    final packages = packageConfig['packages'] as List<dynamic>;
-
-    for (final pkgName in packagesToSync) {
-      final pkg = packages.firstWhere(
-        (p) => p['name'] == pkgName,
-        orElse: () => null,
-      );
-
-      if (pkg == null) continue;
-
-      String rootUri = pkg['rootUri'] as String;
-      String sourcePath;
-
-      if (rootUri.startsWith('file://')) {
-        sourcePath = Uri.parse(rootUri).toFilePath();
-      } else if (rootUri.startsWith('../')) {
-        sourcePath = p.normalize(p.join(projectDir, '.dart_tool', rootUri));
-      } else {
-        continue;
-      }
-
-      final sourceLib = Directory(p.join(sourcePath, 'lib'));
-      if (!sourceLib.existsSync()) continue;
-
-      final targetPkg = Directory(p.join(targetDir.path, pkgName));
-
-      if (targetPkg.existsSync()) {
-        await targetPkg.delete(recursive: true);
-      }
-      await targetPkg.create(recursive: true);
-
-      await _copyDirectory(sourceLib, targetPkg);
-    }
-  }
-
-  Future<void> _copyDirectory(Directory source, Directory target) async {
-    await for (final entity in source.list(recursive: false)) {
-      final targetPath = p.join(target.path, p.basename(entity.path));
-
-      if (entity is Directory) {
-        final newDir = Directory(targetPath);
-        await newDir.create(recursive: true);
-        await _copyDirectory(entity, newDir);
-      } else if (entity is File) {
-        await entity.copy(targetPath);
-      }
-    }
-  }
 }

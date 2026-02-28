@@ -133,9 +133,23 @@ class DevCommand extends Command<int> {
       print('  Done');
     }
 
-    // Sync duxt_ui package for Tailwind scanning
-    print('\x1B[90m→\x1B[0m Syncing packages...');
-    final syncResult = await PackageSync.sync(projectDir);
+    // Run init steps in parallel — these are all independent
+    print('\x1B[90m→\x1B[0m Initializing...');
+    late PackageSyncResult syncResult;
+    late TailwindCompileResult tailwindResult;
+    final twTimer = Stopwatch()..start();
+
+    await Future.wait([
+      PackageSync.sync(projectDir).then((r) => syncResult = r),
+      DuxtTailwind.compile(projectDir).then((r) => tailwindResult = r),
+      _cleanupStaleBuildRunners(projectDir, verbose: verbose),
+      RouterGenerator.generate(projectDir),
+    ]);
+
+    twTimer.stop();
+    final tailwindOk = tailwindResult.ok;
+
+    // Report results
     if (!syncResult.packageConfigFound) {
       print('  \x1B[33m!\x1B[0m Run "dart pub get" first');
     } else {
@@ -143,13 +157,6 @@ class DevCommand extends Command<int> {
         print('  Synced $pkg');
       }
     }
-
-    // Compile Tailwind CSS
-    final twTimer = Stopwatch()..start();
-    print('\x1B[90m→\x1B[0m Compiling Tailwind CSS...');
-    final tailwindResult = await DuxtTailwind.compile(projectDir);
-    final tailwindOk = tailwindResult.ok;
-    twTimer.stop();
     if (tailwindResult.ok) {
       print('  Compiled styles.css \x1B[90m${twTimer.elapsedMilliseconds}ms\x1B[0m');
     } else {
@@ -169,14 +176,7 @@ class DevCommand extends Command<int> {
           break;
       }
     }
-
-    // Kill stale build daemons that may be holding ports (scoped to this project)
-    print('\x1B[90m→\x1B[0m Cleaning up stale processes...');
-    await _cleanupStaleBuildRunners(projectDir, verbose: verbose);
-
-    // Generate routes
-    print('\x1B[90m→\x1B[0m Generating routes...');
-    await RouterGenerator.generate(projectDir);
+    print('  Routes generated');
 
     Process? apiProcess;
     Process? jasprProcess;
@@ -240,8 +240,6 @@ class DevCommand extends Command<int> {
         }
       });
 
-      // Wait for API to start
-      await Future.delayed(const Duration(seconds: 2));
     }
 
     // Start Tailwind in watch mode
