@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.4] - 2026-02-28
+
+### Changed
+- **Parallel dev startup** — `PackageSync`, `TailwindCSS`, stale process cleanup, and route generation now run concurrently via `Future.wait()`, shaving 1-3s off `duxt dev` startup
+- **Disable `jaspr_tailwind` in generated `build.yaml`** — Duxt handles its own CSS pipeline; disabling the duplicate builder prevents hangs and wasted work
+- **AOT builders enabled** — Generated `build.yaml` includes `global_options: build_runner: options: aot: true` for faster builder startup
+- **Unified preview proxy** — `duxt preview` routes `/api/*` through the same port instead of exposing a separate API port
+- **Desktop build uses shared core** — `build_desktop_command` now calls `PackageSync.sync()` and `DuxtTailwind.compile()` instead of duplicated internal methods
+- **Clean SSR server template** — Removed blog pages, Post model, posts API, db.dart, and seed data from the server template. New SSR projects start with a minimal health check endpoint and clean home page.
+
+### Fixed
+- Removed hardcoded 2-second API startup sleep in `duxt dev`
+
 ## [0.6.3] - 2026-02-18
 
 - This prevents generated imports like ..\home\pages\index.dart and makes generated Dart imports valid on Windows.
