@@ -20,10 +20,8 @@ class ServerTemplate {
       'lib',
       'lib/.generated',
       'lib/home/pages',
-      'lib/blog/pages',
       'lib/shared/layouts',
-      'lib/models',
-      'server', 'server/api',
+      'server',
       'web',
     ];
 
@@ -50,17 +48,8 @@ class ServerTemplate {
     // Home page
     await _write(dir, 'lib/home/pages/index.dart', _serverHomeTemplate(projectName));
 
-    // Blog pages (SSR)
-    await _write(dir, 'lib/blog/pages/index.dart', _serverBlogIndexTemplate);
-    await _write(dir, 'lib/blog/pages/_slug_.dart', _serverBlogPostTemplate);
-
-    // Models
-    await _write(dir, 'lib/models/post.dart', _serverPostModel);
-
-    // Server (DuxtServer + ORM)
+    // Server
     await _write(dir, 'server/main.dart', _serverMainTemplate(projectName));
-    await _write(dir, 'server/db.dart', _serverDbTemplate(projectName));
-    await _write(dir, 'server/api/posts.dart', _simplePostsApiTemplate(projectName));
 
     // Web
     await _write(dir, 'web/styles.tw.css', tailwindTemplate);
@@ -81,22 +70,16 @@ class ServerTemplate {
 
   static void _printSuccess(String projectName) {
     print('');
-    print('  \x1B[32m✓\x1B[0m Created server project with DuxtORM');
+    print('  \x1B[32m✓\x1B[0m Created server project');
     print('');
     print('  lib/');
     print('    ├── home/pages/index.dart       → /');
-    print('    ├── blog/pages/');
-    print('    │   ├── index.dart              → /blog (SSR listing)');
-    print('    │   └── _slug_.dart             → /blog/:slug');
-    print('    ├── models/post.dart');
     print('    ├── shared/layouts/');
     print('    ├── .generated/routes.dart      (auto-generated)');
     print('    └── app.dart');
     print('');
-    print('  server/                           (DuxtORM + API)');
-    print('    ├── main.dart');
-    print('    ├── db.dart');
-    print('    └── api/posts.dart');
+    print('  server/');
+    print('    └── main.dart                   API server');
     print('');
     print('  \x1B[36mDevelopment:\x1B[0m');
     print('    duxt dev                        Start dev server');
@@ -198,17 +181,13 @@ class App extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    final routes = generated.generatedRoutes;
-
-    final wrappedRoutes = routes.map((route) => Route(
-      path: route.path,
-      builder: (context, state) => DefaultLayout(
-        child: Builder(builder: (ctx) => route.builder!(ctx, state)),
-      ),
-    )).toList();
-
     return Router(
-      routes: wrappedRoutes,
+      routes: generated.generatedRoutes.map((route) => Route(
+        path: route.path,
+        builder: (context, state) => DefaultLayout(
+          child: Builder(builder: (ctx) => route.builder!(ctx, state)),
+        ),
+      )).toList(),
       errorBuilder: DuxtErrorPage.routerErrorBuilder,
     );
   }
@@ -245,25 +224,6 @@ class DefaultLayout extends StatelessComponent {
                     child: Text('$projectName'),
                   ),
                 ),
-                Nav(
-                  className: 'flex items-center gap-6',
-                  children: [
-                    Link(
-                      to: '/',
-                      child: Span(
-                        className: 'text-sm text-gray-300 hover:text-white transition-colors',
-                        child: Text('Home'),
-                      ),
-                    ),
-                    Link(
-                      to: '/blog',
-                      child: Span(
-                        className: 'text-sm text-gray-300 hover:text-white transition-colors',
-                        child: Text('Blog'),
-                      ),
-                    ),
-                  ],
-                ),
               ],
             ),
           ),
@@ -285,7 +245,6 @@ class DefaultLayout extends StatelessComponent {
 /// Server home page
 String _serverHomeTemplate(String projectName) => '''
 import 'package:jaspr/jaspr.dart' hide Text;
-import 'package:jaspr_router/jaspr_router.dart';
 import 'package:duxt_html/duxt_html.dart';
 
 class HomePage extends StatelessComponent {
@@ -298,35 +257,13 @@ class HomePage extends StatelessComponent {
       child: Div(
         className: 'max-w-3xl mx-auto text-center',
         children: [
-          Span(
-            className: 'inline-block px-4 py-1.5 mb-6 text-sm font-medium text-cyan-400 bg-cyan-500/10 rounded-full',
-            child: Text('Server-Rendered'),
-          ),
           H1(
             className: 'text-5xl font-bold text-white mb-6',
             child: Text('$projectName'),
           ),
           P(
-            className: 'text-xl text-gray-400 mb-10',
-            child: Text('A server-rendered Duxt app with ORM and API routes.'),
-          ),
-          Div(
-            className: 'flex justify-center gap-4',
-            children: [
-              Link(
-                to: '/blog',
-                child: Span(
-                  className: 'px-6 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors inline-block',
-                  child: Text('Read the Blog'),
-                ),
-              ),
-              A(
-                href: 'https://duxt.dev/duxt',
-                target: Target.blank,
-                className: 'px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors',
-                child: Text('Documentation'),
-              ),
-            ],
+            className: 'text-xl text-gray-400',
+            child: Text('Server-rendered with Duxt'),
           ),
         ],
       ),
@@ -335,344 +272,37 @@ class HomePage extends StatelessComponent {
 }
 ''';
 
-/// Server blog index - SSR with AsyncStatelessComponent using duxt_html
-const _serverBlogIndexTemplate = r'''
-import 'package:jaspr/jaspr.dart' hide Text;
-import 'package:jaspr/server.dart' hide Text;
-import 'package:duxt_html/duxt_html.dart';
-import 'package:duxt_ui/duxt_ui.dart';
-
-import '../../models/post.dart';
-
-/// Blog listing page - renders posts on the server
-class BlogPage extends AsyncStatelessComponent {
-  const BlogPage({super.key});
-
-  @override
-  Future<Component> build(BuildContext context) async {
-    final posts = await Post.findAll(publishedOnly: true);
-
-    return Div(
-      className: 'pt-24 pb-20 px-4',
-      child: Div(
-        className: 'max-w-4xl mx-auto',
-        children: [
-          Div(
-            className: 'text-center mb-12',
-            children: [
-              DBadge(label: 'Blog', color: DBadgeColor.primary),
-              H1(
-                className: 'text-4xl font-bold text-white mt-4 mb-4',
-                child: Text('Latest Posts'),
-              ),
-              P(
-                className: 'text-gray-400',
-                child: Text('Server-rendered with DuxtORM'),
-              ),
-            ],
-          ),
-          if (posts.isEmpty)
-            Div(
-              className: 'text-center py-12',
-              child: P(
-                className: 'text-gray-400',
-                child: Text('No posts yet. Create one via the API: POST /api/posts'),
-              ),
-            )
-          else
-            Div(
-              className: 'space-y-6',
-              children: [
-                for (final post in posts)
-                  _postCard(post),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
-  Component _postCard(Post post) {
-    return A(
-      href: '/blog/${post.slug}',
-      className: 'block bg-gray-800/50 rounded-xl p-6 border border-gray-700/50 hover:border-cyan-500/50 transition-colors',
-      children: [
-        H2(
-          className: 'text-xl font-semibold text-white mb-2',
-          child: Text(post.title),
-        ),
-        if (post.excerpt != null)
-          P(
-            className: 'text-gray-400 mb-4',
-            child: Text(post.excerpt!),
-          ),
-        Span(
-          className: 'text-cyan-400 text-sm',
-          child: Text('Read more →'),
-        ),
-      ],
-    );
-  }
-}
-''';
-
-/// Server blog post detail - SSR with AsyncStatelessComponent using duxt_html
-const _serverBlogPostTemplate = r'''
-import 'package:jaspr/jaspr.dart' hide Text;
-import 'package:jaspr/server.dart';
-import 'package:jaspr_router/jaspr_router.dart';
-import 'package:duxt_html/duxt_html.dart';
-import 'package:duxt_ui/duxt_ui.dart';
-
-import '../../models/post.dart';
-
-/// Blog post detail page - renders post on the server
-class BlogPostPage extends AsyncStatelessComponent {
-  final String slug;
-  const BlogPostPage({required this.slug, super.key});
-
-  @override
-  Future<Component> build(BuildContext context) async {
-    final post = await Post.findBySlug(slug);
-
-    return Div(
-      className: 'pt-24 pb-20 px-4',
-      child: Div(
-        className: 'max-w-3xl mx-auto',
-        children: [
-          Div(
-            className: 'mb-8',
-            child: Link(
-              to: '/blog',
-              child: Span(
-                className: 'text-cyan-400 hover:text-cyan-300',
-                child: Text('← Back to Blog'),
-              ),
-            ),
-          ),
-          if (post == null)
-            DAlert(title: 'Error', description: 'Post not found', color: DAlertColor.error)
-          else
-            Article(
-              children: [
-                H1(
-                  className: 'text-4xl font-bold text-white mb-4',
-                  child: Text(post.title),
-                ),
-                if (post.excerpt != null)
-                  P(
-                    className: 'text-xl text-gray-400 mb-8',
-                    child: Text(post.excerpt!),
-                  ),
-                Div(
-                  className: 'prose prose-invert max-w-none',
-                  children: [
-                    for (final line in post.content.split('\n'))
-                      _renderLine(line),
-                  ],
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
-  Component _renderLine(String line) {
-    final t = line.trim();
-    if (t.isEmpty) return Div(className: 'h-4');
-    if (t.startsWith('# ')) return H1(className: 'text-3xl font-bold text-white mt-8 mb-4', child: Text(t.substring(2)));
-    if (t.startsWith('## ')) return H2(className: 'text-2xl font-semibold text-white mt-6 mb-3', child: Text(t.substring(3)));
-    if (t.startsWith('### ')) return H3(className: 'text-xl font-semibold text-white mt-4 mb-2', child: Text(t.substring(4)));
-    return P(className: 'text-gray-300 mb-2', child: Text(line));
-  }
-}
-''';
-
-/// Simplified Post model (no category/tag relations - kept simple for starter template)
-const _serverPostModel = r'''
-import 'package:duxt_orm/duxt_orm.dart';
-
-class Post extends Entity {
-  int? _id;
-  String title;
-  String slug;
-  String content;
-  String? excerpt;
-  bool published;
-  DateTime? createdAt;
-
-  Post({
-    int? id,
-    required this.title,
-    required this.slug,
-    required this.content,
-    this.excerpt,
-    this.published = false,
-    this.createdAt,
-  }) : _id = id;
-
-  @override
-  dynamic get id => _id;
-
-  @override
-  set id(dynamic value) => _id = value as int?;
-
-  @override
-  Map<String, dynamic> toMap() => {
-        'id': id,
-        'title': title,
-        'slug': slug,
-        'content': content,
-        'excerpt': excerpt,
-        'published': published ? 1 : 0,
-      };
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'slug': slug,
-        'content': content,
-        'excerpt': excerpt,
-        'published': published,
-        'createdAt': createdAt?.toIso8601String(),
-      };
-
-  factory Post.fromRow(Map<String, dynamic> row) => Post(
-        id: row['id'] as int?,
-        title: row['title'] as String,
-        slug: row['slug'] as String,
-        content: row['content'] as String,
-        excerpt: row['excerpt'] as String?,
-        published: (row['published'] as int?) == 1,
-        createdAt: row['created_at'] != null
-            ? DateTime.tryParse(row['created_at'] as String)
-            : null,
-      );
-
-  factory Post.fromJson(Map<String, dynamic> json) => Post(
-        id: json['id'] as int?,
-        title: json['title'] as String,
-        slug: json['slug'] as String,
-        content: json['content'] as String,
-        excerpt: json['excerpt'] as String?,
-        published: json['published'] as bool? ?? false,
-      );
-
-  static void register() {
-    Entity.registerModel<Post>(
-      Post.fromRow,
-      schema: {
-        'id': Column.integer().primaryKey().autoIncrement(),
-        'title': Column.string(200).notNull(),
-        'slug': Column.string(200).unique().notNull(),
-        'content': Column.text().notNull(),
-        'excerpt': Column.text().nullable(),
-        'published': Column.boolean().defaultValue(false),
-        'created_at': Column.dateTime().nullable(),
-        'updated_at': Column.dateTime().nullable(),
-      },
-    );
-  }
-
-  // Query helpers
-  static Future<List<Post>> findAll({bool publishedOnly = false}) async {
-    var query = Model<Post>().query();
-    if (publishedOnly) {
-      query = query.where('published', 1);
-    }
-    return query.orderByDesc('created_at').get();
-  }
-
-  static Future<Post?> findBySlug(String slug) async {
-    return Model<Post>().query().where('slug', slug).first();
-  }
-
-  // Seed data
-  static Future<void> seed() async {
-    final count = await Model<Post>().count();
-    if (count > 0) return;
-
-    final post1 = Post(
-      title: 'Getting Started with Duxt',
-      slug: 'getting-started',
-      content: '# Getting Started\n\nWelcome to Duxt!\n\nDuxt is a fullstack framework for Dart.',
-      excerpt: 'Learn how to build apps with Duxt.',
-      published: true,
-    );
-    await post1.save();
-
-    final post2 = Post(
-      title: 'Building APIs with DuxtORM',
-      slug: 'building-apis',
-      content: '# Building APIs\n\nDuxtORM provides an ActiveRecord-style API for database operations.',
-      excerpt: 'Build REST APIs with DuxtORM.',
-      published: true,
-    );
-    await post2.save();
-  }
-}
-''';
-
-/// Server main.dart (DuxtServer entry)
+/// Server main.dart — API server with DuxtServer
 String _serverMainTemplate(String projectName) => '''
 import 'dart:io';
 import 'package:duxt/server.dart';
-import 'db.dart';
-import 'package:$projectName/models/post.dart';
-import 'api/posts.dart';
 
 void main() async {
-  // Initialize ORM and run migrations
-  await Db.init();
-
-  // Seed sample data
-  await Post.seed();
-
   final port = int.tryParse(Platform.environment['PORT'] ?? '') ?? 3001;
 
   final server = DuxtServer(
     port: port,
-    middleware: [securityHeaders(), bodyLimit(), cors(origins: [\'http://localhost:4000\']), jsonBody(), logger()],
+    middleware: [securityHeaders(), cors(origins: [\'http://localhost:4000\']), jsonBody(), logger()],
   );
 
-  registerPostRoutes(server);
+  server.get('/api/health', (req) async {
+    return json({\'status\': \'ok\'});
+  });
 
   server.start();
 }
 ''';
 
-/// main.server.dart for simple server template (Post only, no Category)
+/// main.server.dart — Jaspr SSR entry point
 String _mainServerDartTemplate(String projectName) => '''
-import 'dart:io';
 import 'package:jaspr/dom.dart';
 import 'package:jaspr/server.dart';
 import 'package:duxt/duxt.dart';
-import 'package:duxt_orm/duxt_orm.dart';
 import 'app.dart';
-import 'models/post.dart';
 
 import 'main.server.options.dart';
 
 void main() async {
-  // Initialize ORM for SSR data fetching
-  Post.register();
-
-  final dataDir = Platform.environment['DATA_DIR'] ?? '.';
-  await DuxtOrm.init((
-    driver: 'sqlite',
-    host: '',
-    port: 0,
-    database: '',
-    username: '',
-    password: '',
-    path: '\$dataDir/app.db',
-    ssl: false,
-  ));
-
-  // Auto-migrate database tables
-  await DuxtOrm.migrate();
-
   Api.configure(baseUrl: '/api');
   Jaspr.initializeApp(options: defaultServerOptions);
 
@@ -683,112 +313,5 @@ void main() async {
     ],
     body: App(),
   ));
-}
-''';
-
-/// Simple posts API template (no category relations)
-String _simplePostsApiTemplate(String projectName) {
-  return '''
-import 'package:duxt/server.dart';
-import 'package:duxt_orm/duxt_orm.dart';
-import 'package:$projectName/models/post.dart';
-
-void registerPostRoutes(DuxtServer server) {
-  // GET /api/posts - List all published posts
-  server.get('/api/posts', (req) async {
-    final posts = await Post.findAll(publishedOnly: true);
-    return json({\'posts\': posts.map((p) => p.toJson()).toList()});
-  });
-
-  // GET /api/posts/:slug - Get single post by slug
-  server.get('/api/posts/:slug', (req) async {
-    final slug = req.params[\'slug\'];
-    if (slug == null) return json({\'error\': \'Slug required\'}, statusCode: 400);
-
-    final post = await Post.findBySlug(slug);
-    if (post == null) return json({\'error\': \'Not found\'}, statusCode: 404);
-
-    return json({\'post\': post.toJson()});
-  });
-
-  // POST /api/posts - Create new post
-  server.post('/api/posts', (req) async {
-    final body = req.body as Map<String, dynamic>?;
-    if (body == null) return json({\'error\': \'Body required\'}, statusCode: 400);
-
-    try {
-      final post = Post.fromJson(body);
-      await post.save();
-      return json({\'post\': post.toJson()}, statusCode: 201);
-    } catch (e) {
-      print(\'Create failed: \$e\');
-      return json({\'error\': \'Invalid request data\'}, statusCode: 400);
-    }
-  });
-
-  // PUT /api/posts/:id - Update post
-  server.put('/api/posts/:id', (req) async {
-    final id = int.tryParse(req.params[\'id\'] ?? \'\');
-    if (id == null) return json({\'error\': \'Invalid ID\'}, statusCode: 400);
-
-    final body = req.body as Map<String, dynamic>?;
-    if (body == null) return json({\'error\': \'Body required\'}, statusCode: 400);
-
-    final post = await Model<Post>().find(id);
-    if (post == null) return json({\'error\': \'Not found\'}, statusCode: 404);
-
-    // Update fields
-    post.title = body[\'title\'] as String? ?? post.title;
-    post.slug = body[\'slug\'] as String? ?? post.slug;
-    post.content = body[\'content\'] as String? ?? post.content;
-    post.excerpt = body[\'excerpt\'] as String? ?? post.excerpt;
-    post.published = body[\'published\'] as bool? ?? post.published;
-
-    await post.save();
-    return json({\'post\': post.toJson()});
-  });
-
-  // DELETE /api/posts/:id - Delete post
-  server.delete('/api/posts/:id', (req) async {
-    final id = int.tryParse(req.params[\'id\'] ?? \'\');
-    if (id == null) return json({\'error\': \'Invalid ID\'}, statusCode: 400);
-
-    final post = await Model<Post>().find(id);
-    if (post == null) return json({\'error\': \'Not found\'}, statusCode: 404);
-
-    await post.destroy();
-    return json({\'success\': true});
-  });
-}
-''';
-}
-
-/// Server db.dart
-String _serverDbTemplate(String projectName) => '''
-import 'dart:io';
-import 'package:duxt_orm/duxt_orm.dart';
-import 'package:$projectName/models/post.dart';
-
-class Db {
-  static Future<void> init() async {
-    // Register models
-    Post.register();
-
-    // Initialize ORM with SQLite
-    final dataDir = Platform.environment['DATA_DIR'] ?? '.';
-    await DuxtOrm.init((
-      driver: 'sqlite',
-      host: '',
-      port: 0,
-      database: '',
-      username: '',
-      password: '',
-      path: '\$dataDir/app.db',
-      ssl: false,
-    ));
-
-    // Run migrations (creates tables)
-    await DuxtOrm.migrate();
-  }
 }
 ''';
